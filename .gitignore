@@ -1,0 +1,7 @@
+volumes
+.env
+todo.ini
+__pycache__
+*.pyc
+
+.ipynb_checkpoints

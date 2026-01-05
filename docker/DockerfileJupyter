@@ -1,0 +1,30 @@
+FROM python:3.10.9
+
+SHELL ["/bin/bash", "-c"]
+
+ENV APP_PORT=8888
+ENV APP_LOG_LOCATION=logs
+
+ENV TZ=Asia/Seoul
+ENV APP_PATH=/apps
+ENV SERVICE_NAME=jupyter 
+
+WORKDIR ${APP_PATH}
+
+COPY ../apps/background/modules ${APP_PATH}/background/modules
+COPY ../poetry.lock ${APP_PATH}
+COPY ../pyproject.toml ${APP_PATH}
+
+ENV PYTHONPATH=${APP_PATH}:${APP_PATH}/app
+
+ENV POETRY_HOME /usr/local
+
+# Poetry 설치
+RUN curl -sSL https://install.python-poetry.org | python3 - \
+    && [ -e /usr/local/bin/poetry ] || ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry
+
+# Poetry 가상환경 설정 및 의존성 설치
+RUN poetry config virtualenvs.in-project true \
+    && poetry install --no-root --without cpu
+
+CMD ["poetry", "run", "jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]

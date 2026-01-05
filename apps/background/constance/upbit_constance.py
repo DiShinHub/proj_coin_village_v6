@@ -1,0 +1,3 @@
+class UpbitConst:
+    ORDERBOOK_QUEUE_KEY = "ucoqk-B9t37Wq01xLd25K8"
+    TRANSACTION_BLOCK_KEY = "uctbk-a7F3k920Lx18zQ64"

@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+
+  cv-apps-background:
+    container_name: ${SERVICE_NAME_BACKGROUND}
+    build:
+      context: ../
+      dockerfile: ./docker/DockerfileCvAppsBackground
+    ports:
+      - "${SERVICE_PORT_BACKGROUND}:${SERVICE_PORT_BACKGROUND}"
+    volumes:
+      - ./volumes/logs/${SERVICE_NAME_BACKGROUND}:/apps/logs/${SERVICE_NAME_BACKGROUND}
+      - ../apps/background:/apps/background
+      - ./mlflow-data:/mlflow-data
+    environment:
+      - TZ=${TIMEZONE}
+      - CONTAINER_NAME=${SERVICE_NAME_BACKGROUND}
+      - APP_PORT=${SERVICE_PORT_BACKGROUND}
+      - APP_LOG_LOCATION=/apps/logs/${SERVICE_NAME_BACKGROUND}
+      - POSTGRES_HOST=${APP_NAME}-db-postgres-compose
+      - POSTGRES_PORT=${POSTGRES_CONTAINER_PORT}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=${APP_NAME}-redis-compose
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - MINIO_EXTERNAL_URL=${MINIO_EXTERNAL_URL}
+      - MINIO_SERVICE_PORT=${MINIO_SERVICE_PORT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_LOCAL=${MINIO_LOCAL}
+      - SLACK_TOKEN=${SLACK_TOKEN}
+      - UPBIT_ACCESS_KEY=${UPBIT_ACCESS_KEY}
+      - UPBIT_SECRET_KEY=${UPBIT_SECRET_KEY}
+      - BINANCE_ACCESS_KEY=${BINANCE_ACCESS_KEY}
+      - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY}
+      - KIS_APP_KEY=${KIS_APP_KEY}
+      - KIS_SECRET_KEY=${KIS_SECRET_KEY}
+      - EXCHAGE_RATE_KEY=${EXCHAGE_RATE_KEY}
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_HOST}:${MLFLOW_CONTAINER_PORT}
+      - NOTION_KEY=${NOTION_KEY}
+    depends_on:
+      - cv-db-postgres
+      - cv-redis
+
+  jupyter:
+    container_name: ${SERVICE_NAME_JUPYTER}
+    build:
+      context: ../
+      dockerfile: ./docker/DockerfileJupyter
+    ports:
+      - "${SERVICE_PORT_JUPYTER}:${SERVICE_PORT_JUPYTER}"
+    volumes:
+      - ./volumes/logs/${SERVICE_NAME_JUPYTER}:/apps/logs/${SERVICE_NAME_JUPYTER}
+      - ../apps/background:/apps/background
+      - ../labs:/apps/jupyter/work
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - CONTAINER_NAME=${SERVICE_NAME_JUPYTER}
+      - APP_PORT=${SERVICE_PORT_JUPYTER}
+      - POSTGRES_HOST=${APP_NAME}-db-postgres-compose
+      - POSTGRES_PORT=${POSTGRES_CONTAINER_PORT}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=${APP_NAME}-redis-compose
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - MINIO_EXTERNAL_URL=${MINIO_EXTERNAL_URL}
+      - MINIO_SERVICE_PORT=${MINIO_SERVICE_PORT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_LOCAL=${MINIO_LOCAL}
+      - SLACK_TOKEN=${SLACK_TOKEN}
+      - UPBIT_ACCESS_KEY=${UPBIT_ACCESS_KEY}
+      - UPBIT_SECRET_KEY=${UPBIT_SECRET_KEY}
+      - BINANCE_ACCESS_KEY=${BINANCE_ACCESS_KEY}
+      - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY}
+      - KIS_APP_KEY=${KIS_APP_KEY}
+      - KIS_SECRET_KEY=${KIS_SECRET_KEY}
+      - EXCHAGE_RATE_KEY=${EXCHAGE_RATE_KEY}
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_HOST}:${MLFLOW_CONTAINER_PORT}
+      - NOTION_KEY=${NOTION_KEY}
+
+  cv-db-postgres:
+    container_name: ${APP_NAME}-db-postgres-compose
+    image: postgres:14.6-alpine
+    ports:
+      - "${POSTGRES_CONTAINER_PORT}:5432"
+    volumes:
+      - ./volumes/data/db-postgres:/var/lib/postgresql/data
+      - ../_ascm/sql:/sql
+    command: ["postgres", "-c", "log_statement=all"]
+    environment:
+      - POSTGRES_HOST=${APP_NAME}-db-postgres-compose
+      - POSTGRES_PORT=${POSTGRES_CONTAINER_PORT}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TZ=${POSTGRES_TIMEZONE}
+    restart: unless-stopped
+
+  cv-redis:
+    container_name: ${APP_NAME}-redis-compose
+    image: redis:5.0.7
+    ports:
+      - "${REDIS_PORT}:6379"
+    command: ["redis-server"]
+    restart: unless-stopped
+    
+  cv-object-storage-minio:
+    container_name: ${APP_NAME}-object-storage-minio-compose
+    image: minio/minio:latest
+    ports:
+      - "${MINIO_SERVICE_PORT}:${MINIO_SERVICE_PORT}"
+      - "${MINIO_CONSOLE_PORT}:${MINIO_CONSOLE_PORT}"
+    volumes:
+      - ./volumes/data/object-storage-minio:/data
+    command: server /data --console-address ":${MINIO_CONSOLE_PORT}"
+    environment:
+      - MINIO_INTERNAL_URL=${MINIO_INTERNAL_URL}
+      - MINIO_EXTERNAL_URL=${MINIO_EXTERNAL_URL}
+      - MINIO_PRESIGN_URL_EXPIRE=${MINIO_PRESIGN_URL_EXPIRE}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_LOCAL=${MINIO_LOCAL}
+    shm_size: '1gb'
+    restart: unless-stopped
+      
+  mlflow-server:
+    container_name: ${APP_NAME}-db-mlflow-compose
+    build:
+      context: ../
+      dockerfile: ./docker/DockerfileMlflow
+    ports:
+      - "${MLFLOW_CONTAINER_PORT}:${MLFLOW_CONTAINER_PORT}"
+    volumes:
+      - ./mlflow-data:/mlflow-data
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://mlflow_user:mlflow_pass@cv-db-postgres:5432/mlflow
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=file:///mlflow-data  
+    depends_on:
+      - cv-db-postgres
+      - cv-redis
+

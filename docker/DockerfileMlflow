@@ -1,0 +1,19 @@
+FROM ghcr.io/mlflow/mlflow
+
+SHELL ["/bin/bash", "-c"]
+
+ENV APP_PORT=5000
+ENV APP_LOG_LOCATION=logs
+
+ENV TZ=Asia/Seoul
+ENV APP_PATH=/apps
+ENV SERVICE_NAME=mlflow 
+
+WORKDIR ${APP_PATH}
+
+# PostgreSQL 드라이버 설치
+RUN pip install --no-cache-dir boto3
+RUN pip install --no-cache-dir psycopg2-binary
+
+# MLflow 서버 실행
+CMD ["mlflow", "server","--backend-store-uri", "postgresql://mlflow_user:mlflow_pass@cv-db-postgres:5432/mlflow", "--default-artifact-root", "file:///mlflow-data", "--host", "0.0.0.0", "--port", "5000"]
