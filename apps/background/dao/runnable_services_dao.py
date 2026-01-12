@@ -16,13 +16,15 @@ class runnableServicesDao():
                 execution_path,
                 execution_class,
                 execution_method,
-                service_options,
                 product_name,
                 reg_dt,
                 reg_member_seq,
                 mod_dt,
                 mod_member_seq,
-                activate_yn
+                activate_yn,
+                interval_options,
+                schedule_options,
+                service_options
             FROM
                 runnable_services
             WHERE
