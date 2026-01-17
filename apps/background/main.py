@@ -1,4 +1,4 @@
-from background.middlewares.service_process_handler import ProcessHandler
+from background.middlewares.process_handler import ProcessHandler
 
 class BackgroundMain(ProcessHandler):
     

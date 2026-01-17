@@ -50,7 +50,9 @@ class ProcessHandler():
                             runnable_service["execution_path"], 
                             runnable_service["execution_class"], 
                             runnable_service["execution_method"], 
-                            runnable_service["service_options"]
+                            runnable_service["service_options"], 
+                            runnable_service["interval_options"], 
+                            runnable_service["schedule_options"]
                         )
                 
                 # 2. 제외 된 프로세스 종료
@@ -60,7 +62,7 @@ class ProcessHandler():
             
             time.sleep(1) 
     
-    def start_process(self, seq, execution_path, execution_class, execution_method, service_options=None):
+    def start_process(self, seq, execution_path, execution_class, execution_method, service_options=None, interval_options=None, schedule_options=None):
         
         # --- 프로세스 실행
         if seq in self.processes and self.processes[seq].is_alive():
@@ -74,12 +76,29 @@ class ProcessHandler():
             # 파일 임포트, 클래스, 메소드 동적 호출
             service_module = importlib.import_module(f"{execution_path}")
             service_class = getattr(service_module, execution_class)
-            if service_options:
-                service_method = getattr(service_class(seq, service_options), execution_method)
+            # if service_options:
+            #     service_method = getattr(service_class(seq, service_options), execution_method)
             
-            else:
-                service_method = getattr(service_class(seq), execution_method)
-                
+            # else:
+            #     service_method = getattr(service_class(seq), execution_method)
+
+            # 생성자 인자 조합
+            init_args = [seq]
+            if service_options is not None:
+                init_args.append(service_options)
+
+            if interval_options is not None:
+                init_args.append(interval_options)
+
+            if schedule_options is not None:
+                init_args.append(schedule_options)
+
+            # 인스턴스 생성
+            service_instance = service_class(*init_args)
+
+            # 메소드 바인딩
+            service_method = getattr(service_instance, execution_method)
+
             p = multiprocessing.Process(target=service_method)
             p.start()
 
@@ -106,5 +125,5 @@ class ProcessHandler():
             self.log.info(f"프로세스 킬 성공. seq : {seq}")
             
         except Exception as e:
-            self.log.info(f"프로세스 킬 실패. {seq}, class : {self.__class__.__name__}, method : {inspect.currentframe().f_code.co_name}, error : {str(e)}")
+            self.log.info(f"프로세스 킬 실패. {seq}, class : {self.__class__.__name__},  error : {str(e)}")
             
