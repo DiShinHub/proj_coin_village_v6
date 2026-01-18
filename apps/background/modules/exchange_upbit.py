@@ -331,3 +331,28 @@ class ExChangeUpbit(ExChangeCalculator):
         date_adjusted = dt.strftime("%Y-%m-%d %H:%M:%S")
         return date_adjusted
     
+    def get_price_diff_rate(self, from_price, to_price):
+        """
+        def description :가격 변화율 계산
+
+
+        Parameters
+        ----------
+        from_price : 시작점 종가
+        to_price : 종료점 종가
+
+        Returns
+        -------
+        change_rate : 현재변화율 (float)
+        """
+        if from_price == 0 : 
+            self.log.info(f"from_price가 0입니다.")
+            raise
+            
+        if to_price == 0 : 
+            self.log.info(f"to_price가 0입니다.")
+            raise
+
+        change_rate = ((to_price - from_price) / from_price) * 100
+        change_rate = round(change_rate, 4)
+        return change_rate

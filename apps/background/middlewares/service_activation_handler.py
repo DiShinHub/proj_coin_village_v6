@@ -9,7 +9,8 @@ class ServiceActivationHandler():
             self, 
             seq=None, 
             interval_options=None, 
-            schedule_options=None
+            schedule_options=None, 
+            **kwargs
         ):
 
         self.runnable_service_dao = runnableServicesDao()

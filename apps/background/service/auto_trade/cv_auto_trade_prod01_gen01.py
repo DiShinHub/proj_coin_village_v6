@@ -17,6 +17,7 @@ class CvAutoTradeProd01Gen01(ServiceActivationHandler):
     Desc : 
     - 호가창 조회
     """
+    pref_slack_msg_box = "slack_msg_box"
 
     def __init__(
             self, 
@@ -34,7 +35,6 @@ class CvAutoTradeProd01Gen01(ServiceActivationHandler):
         self.redis = redis_single
 
         self.socket_url = "wss://api.upbit.com/websocket/v1"
-        self.pref_slack_msg_box = "slack_msg_box"
     
     def main(self):
 

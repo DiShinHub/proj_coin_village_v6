@@ -16,6 +16,7 @@ class CvMessengerGen01(ServiceActivationHandler):
     - 메세지 큐 확인
     - 메세지가 존재하면 포멧팅 해서 슬랙 전송
     """
+    pref_slack_msg_box = "slack_msg_box"
 
     def __init__(
             self, 
@@ -32,7 +33,6 @@ class CvMessengerGen01(ServiceActivationHandler):
         
         self.redis = redis_single
         self.slack = Slack(channel="#coinvillage")
-        self.pref_slack_msg_box = "slack_msg_box"
     
     def main(self):
 

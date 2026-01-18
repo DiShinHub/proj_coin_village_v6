@@ -10,7 +10,7 @@ class OrderbookHandler():
     - 코어 실행은 오버라이딩하여 재정의 필요
     """
     
-    def __init__(self, orderbook_key=None):
+    def __init__(self, orderbook_key=None, **kwargs):
         self.redis = redis_single
         
         # system attrs
