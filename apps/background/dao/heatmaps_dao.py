@@ -23,7 +23,7 @@ class HeatmapsDao():
         res = self.postgres.execute_query_with_commit(query)
         return res
 
-    def get_heatmaps_volume_time_week_by_ticker(self, ticker):
+    def get_heatmaps_volume_time_week(self, ticker=None, term=None):
 
         query = f"""
             select
@@ -33,9 +33,14 @@ class HeatmapsDao():
                 minio_path
             from
                 heatmaps_volume_time_week
-            WHERE
-                ticker = '{ticker}';
+            WHERE 1=1
+                
         """
+        if ticker:
+            query += f""" AND ticker = '{ticker}'"""
+        if term:
+            query += f""" AND term = '{term}'"""
+
         return self.postgres.read_one(query) 
 
     def update_heatmaps_volume_time_week(self, params, seq):
@@ -67,7 +72,7 @@ class HeatmapsDao():
     
     def upsert_heatmaps_volume_time_week(self, params):
 
-        heatmaps_volume_time_week = self.get_heatmaps_volume_time_week_by_ticker(params["ticker"])
+        heatmaps_volume_time_week = self.get_heatmaps_volume_time_week(params["ticker"], params["term"])
         if len(heatmaps_volume_time_week) > 0:
             self.update_heatmaps_volume_time_week(params, heatmaps_volume_time_week["seq"])
 
