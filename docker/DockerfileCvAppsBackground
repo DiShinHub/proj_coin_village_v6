@@ -19,6 +19,7 @@ ENV PYTHONPATH=${APP_PATH}:${APP_PATH}/app
 RUN pip install poetry
 ENV POETRY_HOME /usr/local
 
-RUN poetry install --no-root --without cpu,api,jupyter,stat-visual
+RUN poetry install --no-root --without cpu,api,jupyter
+
 RUN chmod +x /apps/${SERVICE_NAME}/main.sh
 CMD /bin/bash -c "/apps/$SERVICE_NAME/main.sh"

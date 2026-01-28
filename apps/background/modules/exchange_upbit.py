@@ -250,6 +250,7 @@ class ExChangeUpbit(ExChangeCalculator):
         # 기준 시점 이후 필요한 시간 간격 정의
         intervals = {
             "on_time": start_time,
+            "after_5min": start_time + timedelta(minutes=5),
             "after_15min": start_time + timedelta(minutes=15),
             "after_30min": start_time + timedelta(minutes=30),
             "after_1hour": start_time + timedelta(hours=1),

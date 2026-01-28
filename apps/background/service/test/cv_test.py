@@ -1,11 +1,11 @@
-from background.middlewares.service_activation_handler import ServiceActivationHandler
+from background.middlewares.service_handler import ServiceHandler
 
 from background.modules.log import Log
 from background.modules.redis import Redis
 
 import os
 
-class CvRedisCleanerGen01(ServiceActivationHandler):
+class CvRedisCleanerGen01(ServiceHandler):
     slack_post_prefix = "tester"
 
     def __init__(

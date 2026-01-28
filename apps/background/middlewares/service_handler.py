@@ -1,9 +1,10 @@
+from background.modules.log import system_module_log
 from background.dao.runnable_services_dao import runnableServicesDao
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 import time
 
-class ServiceActivationHandler():
+class ServiceHandler():
     
     def __init__(
             self, 
@@ -12,7 +13,7 @@ class ServiceActivationHandler():
             schedule_options=None, 
             **kwargs
         ):
-
+        self.log = system_module_log
         self.runnable_service_dao = runnableServicesDao()
 
         self.seq = seq
@@ -60,7 +61,10 @@ class ServiceActivationHandler():
             'cron', 
             day=self.start_day, 
             hour=self.start_hour, 
-            minute=self.start_min
+            minute=self.start_min,
+            second=0,
+            max_instances=1,
+            coalesce=True
         )
         scheduler.start()
     

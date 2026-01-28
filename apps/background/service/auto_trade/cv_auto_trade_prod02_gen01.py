@@ -1,4 +1,4 @@
-from background.middlewares.service_activation_handler import ServiceActivationHandler
+from background.middlewares.service_handler import ServiceHandler
 from background.middlewares.orderbook_handler import OrderbookHandler
 from background.constance.upbit_constance import UpbitConst
 
@@ -274,7 +274,7 @@ class CvAutoTradeProd02Gen01Core():
         
         self.redis.save_msg_on_Q(msg)
 
-class CvAutoTradeProd02Gen01(OrderbookHandler, ServiceActivationHandler):
+class CvAutoTradeProd02Gen01(OrderbookHandler, ServiceHandler):
     """
     Service Name : CvAutoTradeProd02
     Generation : 01 
@@ -294,7 +294,7 @@ class CvAutoTradeProd02Gen01(OrderbookHandler, ServiceActivationHandler):
         ):
 
         OrderbookHandler.__init__(self, orderbook_key=UpbitConst.ORDERBOOK_QUEUE_KEY)
-        ServiceActivationHandler.__init__(self, schedule_options=schedule_options, interval_options=interval_options)
+        ServiceHandler.__init__(self, schedule_options=schedule_options, interval_options=interval_options)
 
         self.log = Log(os.path.basename(__file__)).get_logger()
         self.seq = seq

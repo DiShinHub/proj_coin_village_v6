@@ -1,4 +1,4 @@
-from background.middlewares.service_activation_handler import ServiceActivationHandler
+from background.middlewares.service_handler import ServiceHandler
 from background.constance.upbit_constance import UpbitConst
 
 from background.modules.log import Log
@@ -9,7 +9,7 @@ import json
 import time
 import os
 
-class CvAutoTradeProd01Gen01(ServiceActivationHandler):
+class CvAutoTradeProd01Gen01(ServiceHandler):
     """
     Service Name : CvAutoTradeProd01
     Generation : 01 

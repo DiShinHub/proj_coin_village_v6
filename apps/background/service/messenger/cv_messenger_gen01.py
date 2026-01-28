@@ -1,4 +1,4 @@
-from background.middlewares.service_activation_handler import ServiceActivationHandler
+from background.middlewares.service_handler import ServiceHandler
 
 from background.modules.log import Log
 from background.modules.slack import Slack
@@ -7,7 +7,7 @@ from background.modules.redis import r as redis_single
 import time
 import os
 
-class CvMessengerGen01(ServiceActivationHandler):
+class CvMessengerGen01(ServiceHandler):
     """
     Service Code : CvRedisCleaner
     Generation : 01 
