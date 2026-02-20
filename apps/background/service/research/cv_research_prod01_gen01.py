@@ -191,6 +191,8 @@ class CvResearchProd01Gen01(ServiceHandler):
                 bbox_inches="tight"
             )
 
+            plt.close() 
+
             # 업로드
             self.minio.upload_file(minio_path, local_path)
 

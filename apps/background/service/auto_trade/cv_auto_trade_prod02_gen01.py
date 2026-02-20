@@ -332,6 +332,6 @@ class CvAutoTradeProd02Gen01(OrderbookHandler, ServiceHandler):
         p.start()
         
         # --- 트래픽 제어 
-        time.sleep(0.1)
+        time.sleep(0.25)
         
 

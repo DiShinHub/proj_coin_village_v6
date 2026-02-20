@@ -104,3 +104,23 @@ docker-compose ...
 
 4. mlflow를 사용하는 서비스에서 아래 라이브러리가 요구 된다
 boto3, psycopg2
+
+
+### disk.vhdx 강제 압축 (핵심)
+
+0. 관리자 PowerShell :
+wsl --shutdown
+
+1. PowerShell에서 실행
+diskpart
+
+2. diskpart 콘솔에서 순서대로 
+
+select vdisk file="C:\...\AppData\Local\Docker\wsl\disk\docker_data.vhdx"
+attach vdisk readonly
+compact vdisk
+detach vdisk
+exit
+
+3. Docker 재실행
+Docker Desktop 실행
