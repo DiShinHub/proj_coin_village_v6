@@ -9,9 +9,9 @@ class HeatmapsDao():
 
         # base query
         query = f"""
-            INSERT INTO public.heatmaps_volume_time_week
-            (seq, ticker, term, minio_path, reg_dt, mod_dt)
-            VALUES(nextval('heatmaps_volume_time_week_seq_seq'::regclass), 
+            INSERT INTO public.eda_images
+            (seq, exchange, ticker, minio_path, description, reg_dt, mod_dt)
+            VALUES(nextval('eda_images_seq_seq'::regclass), 
             '{params['ticker']}', 
             '{params['term']}', 
             '{params['minio_path']}', 

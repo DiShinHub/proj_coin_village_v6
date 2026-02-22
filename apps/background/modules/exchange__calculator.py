@@ -1,69 +1,213 @@
-
+from background.modules.log import system_module_log
 import numpy as np
 import pandas as pd 
+
+import datetime
 
 class ExChangeCalculator():
     
     def __init__(self, df=None):
+        self.log = system_module_log
         self.df = df
-    
-    def clear_df(self):
-        self.df = pd.DataFrame()
+        self.future_direction_horizon = 12
+        self.future_direction_standard_pct = 0.5 
         
     def get_df(self):
         return self.df
+        
+    def set_df(self, df):
+        self.df = df
+        return self.df
+    
+    def clear_df(self):
+        self.df = pd.DataFrame()
+    
+    def get_ohlcv(self):
+        # override on each exchange
+        return 
     
     def set_ohlcv(self):
         # override on each exchange
         return 
     
-    def set_hour_sin(self):
+    def set_ohlcvs(self, interval, days, count, from_, to_):
+
+        max_call = int((days * 24 * 12) / count) + 2
+
+        dfs = []
+        for _ in range(max_call):
+            df = self.get_ohlcv(
+                interval=interval,
+                date=to_.strftime("%Y-%m-%d %H:%M:%S"),
+                count=count
+            )
+            if df is None or df.empty:
+                break
+
+            dfs.append(df)
+
+            # 30일 이전이면 종료
+            oldest_dt = df["datetime"].iloc[0]
+            if oldest_dt <= from_:
+                break
+
+            # 다음 호출 기준점
+            if interval == "minute1":
+                to_ = oldest_dt - datetime.timedelta(minutes=1)
+            elif interval == "minute3":
+                to_ = oldest_dt - datetime.timedelta(minutes=3)
+            elif interval == "minute5":
+                to_ = oldest_dt - datetime.timedelta(minutes=5)
+            elif interval == "minute10":
+                to_ = oldest_dt - datetime.timedelta(minutes=10)
+            elif interval == "minute15":
+                to_ = oldest_dt - datetime.timedelta(minutes=15)
+            elif interval == "minute30":
+                to_ = oldest_dt - datetime.timedelta(minutes=30)
+            elif interval == "minute60":
+                to_ = oldest_dt - datetime.timedelta(hours=1)
+            elif interval == "minute240":
+                to_ = oldest_dt - datetime.timedelta(hours=4)
+            elif interval == "day":
+                to_ = oldest_dt - datetime.timedelta(days=1)
+            elif interval == "week":
+                to_ = oldest_dt - datetime.timedelta(days=7)
+            elif interval == "month":
+                to_ = oldest_dt - datetime.timedelta(days=31)
+
+        # --- df 콘켓
+        df_combined = (
+            pd.concat(dfs)
+            .drop_duplicates(subset="datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
+        self.df = df_combined
+        return self.df
+    
+    def set_all_features(self):
+
+        methods = [
+            getattr(self, m)
+            for m in dir(self)
+            if callable(getattr(self, m))
+            and m.startswith("set_")
+            and m not in ["set_ticker"]
+            and m not in ["set_df"]
+            and m not in ["set_ohlcv"]
+            and m not in ["set_ohlcvs"]
+            and m not in ["set_all_features"]
+        ]
+        for method in methods:
+            try:
+                method()
+
+            except Exception as e:
+                self.log.info(f"ExChangeCalculator Error, method : {method.__name__}, error : {str(e)} ")
+
+        return self.get_df()
+    
+    def set_timestamp(self):
+        self.df["timestamp"] = self.df["datetime"].astype("int64") // 10**9
+        self.df['timestamp'] = pd.to_datetime(self.df['timestamp'], unit='s')
+        return self.df
+    
+    def set_minute(self):
+        if "timestamp" not in self.df.columns:
+            self.set_timestamp()
+
+        self.df['minute'] = self.df['timestamp'].dt.minute
+        return self.df
+    
+    def set_hour(self):
         self.df['hour'] = self.df['datetime'].dt.hour
+        return self.df
+    
+    def set_day(self):
+        self.df['day'] = self.df['datetime'].dt.day
+        return self.df
+    
+    def set_weekday(self):
+        self.df['weekday'] = self.df['datetime'].dt.weekday
+        return self.df
+    
+    def set_weekday_num(self):
+        self.df['weekday_num'] = self.df["datetime"].dt.weekday
+        return self.df
+    
+    def set_month(self):
+        self.df['month'] = self.df['datetime'].dt.month
+        return self.df
+    
+    def set_minute_of_day(self):
+        self.df['minute_of_day'] = self.df['datetime'].dt.hour * 60 + self.df['datetime'].dt.minute
+        return self.df
+    
+    def set_hour_sin(self):
+        if "hour" not in self.df.columns:
+            self.set_hour()
+            
         self.df['hour_sin'] = np.sin(2 * np.pi * self.df['hour'] / 24)
         return self.df
     
     def set_hour_cos(self):
-        self.df['hour'] = self.df['datetime'].dt.hour
+        if "hour" not in self.df.columns:
+            self.set_hour()
+
         self.df['hour_cos'] = np.cos(2 * np.pi * self.df['hour'] / 24)
         return self.df
     
     def set_weekday_sin(self):
-        self.df['weekday'] = self.df['datetime'].dt.weekday
+        if "weekday" not in self.df.columns:
+            self.set_weekday()
+
         self.df['weekday_sin'] = np.sin(2 * np.pi * self.df['weekday'] / 7)
         return self.df
     
     def set_weekday_cos(self):
-        self.df['weekday'] = self.df['datetime'].dt.weekday
+        if "weekday" not in self.df.columns:
+            self.set_weekday()
+
         self.df['weekday_cos'] = np.cos(2 * np.pi * self.df['weekday'] / 7)
         return self.df
     
     def set_day_of_month_sin(self):
-        self.df['day'] = self.df['datetime'].dt.day
+        if "day" not in self.df.columns:
+            self.set_day()
+
         self.df['day_of_month_sin'] = np.sin(2 * np.pi * self.df['day'] / 31)
         return self.df
 
     def set_day_of_month_cos(self):
-        self.df['day'] = self.df['datetime'].dt.day
+        if "day" not in self.df.columns:
+            self.set_day()
+
         self.df['day_of_month_cos'] = np.cos(2 * np.pi * self.df['day'] / 31)
         return self.df
 
     def set_month_sin(self):
-        self.df['month'] = self.df['datetime'].dt.month
+        if "month" not in self.df.columns:
+            self.set_month()
         self.df['month_sin'] = np.sin(2 * np.pi * self.df['month'] / 12)
         return self.df
 
     def set_month_cos(self):
-        self.df['month'] = self.df['datetime'].dt.month
+        if "month" not in self.df.columns:
+            self.set_month()
         self.df['month_cos'] = np.cos(2 * np.pi * self.df['month'] / 12)
         return self.df
 
     def set_minute_of_day_sin(self):
-        self.df['minute_of_day'] = self.df['datetime'].dt.hour * 60 + self.df['datetime'].dt.minute
+        if "minute_of_day" not in self.df.columns:
+            self.set_minute_of_day()
+
         self.df['minute_of_day_sin'] = np.sin(2 * np.pi * self.df['minute_of_day'] / 1440)
         return self.df
 
     def set_minute_of_day_cos(self):
-        self.df['minute_of_day'] = self.df['datetime'].dt.hour * 60 + self.df['datetime'].dt.minute
+        if "minute_of_day" not in self.df.columns:
+            self.set_minute_of_day()
+
         self.df['minute_of_day_cos'] = np.cos(2 * np.pi * self.df['minute_of_day'] / 1440)
         return self.df
     
@@ -228,16 +372,74 @@ class ExChangeCalculator():
         vol30 = self.df['close'].astype(float).pct_change().rolling(30).std()
         self.df['volatility_10_30_ratio'] = vol10 / (vol30 + 1e-6)
         return self.df
+    
+    def set_atr(self, period=14):
+
+        high = self.df['high'].astype(float)
+        low = self.df['low'].astype(float)
+        close = self.df['close'].astype(float)
+
+        prev_close = close.shift(1)
+
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        # Wilder 방식 (EMA 기반)
+        atr = tr.ewm(alpha=1/period, adjust=False).mean()
+        self.df['atr'] = atr
+        return self.df
 
     def set_atr_ratio(self):
         self.df['atr_ratio'] = self.df['atr'].astype(float) / self.df['close'].astype(float)
         return self.df
+    
+    def set_cdlengulfing(self):
+
+        df = self.df.copy()
+        prev_bearish = df['close'].shift(1) < df['open'].shift(1)
+        prev_bullish = df['close'].shift(1) > df['open'].shift(1)
+
+        engulf_bull = (
+            prev_bearish &
+            (df['close'] > df['open']) &
+            (df['open'] < df['close'].shift(1)) &
+            (df['close'] > df['open'].shift(1))
+        )
+        engulf_bear = (
+            prev_bullish &
+            (df['close'] < df['open']) &
+            (df['open'] > df['close'].shift(1)) &
+            (df['close'] < df['open'].shift(1))
+        )
+        signal = pd.Series(np.where(engulf_bull, 100, np.where(engulf_bear, -100, 0)), index=df.index)
+        self.df["cdlengulfing"] = signal
+        return self.df
+
+    def set_momentum(self, period=10):
+        close = self.df['close'].astype(float)
+        self.df['momentum'] = close - close.shift(period)
+        return self.df
 
     def set_bullish_engulfing_flag(self):
+        if "cdlengulfing" not in self.df.columns:
+            self.set_cdlengulfing()
+
+        if "momentum" not in self.df.columns:
+            self.set_momentum()
+
         self.df['bullish_engulfing_flag'] = ((self.df['cdlengulfing'].astype(float)==1) & (self.df['momentum'].astype(float)>0)).astype(int)
         return self.df
 
     def set_bearish_engulfing_flag(self):
+        if "cdlengulfing" not in self.df.columns:
+            self.set_cdlengulfing()
+            
+        if "momentum" not in self.df.columns:
+            self.set_momentum()
+            
         self.df['bearish_engulfing_flag'] = ((self.df['cdlengulfing'].astype(float)==-1) & (self.df['momentum'].astype(float)<0)).astype(int)
         return self.df
     
@@ -577,27 +779,6 @@ class ExChangeCalculator():
             (lower_shadow >= (df['high'] - df['low']) * 0.5)
         )
         self.df["cdldragonflydoji"] = signal.astype(int) * 100
-        return self.df
-    
-    def set_cdlengulfing(self):
-        df = self.df.copy()
-        prev_bearish = df['close'].shift(1) < df['open'].shift(1)
-        prev_bullish = df['close'].shift(1) > df['open'].shift(1)
-
-        engulf_bull = (
-            prev_bearish &
-            (df['close'] > df['open']) &
-            (df['open'] < df['close'].shift(1)) &
-            (df['close'] > df['open'].shift(1))
-        )
-        engulf_bear = (
-            prev_bullish &
-            (df['close'] < df['open']) &
-            (df['open'] > df['close'].shift(1)) &
-            (df['close'] < df['open'].shift(1))
-        )
-        signal = pd.Series(np.where(engulf_bull, 100, np.where(engulf_bear, -100, 0)), index=df.index)
-        self.df["cdlengulfing"] = signal
         return self.df
 
     def set_cdleveningdojistar(self):
@@ -1124,3 +1305,83 @@ class ExChangeCalculator():
         )
         self.df["cdlxsidegap3methods"] = cond.astype(int) * -100
         return self.df
+
+    """
+    """
+    def set_future_close(self):
+        self.df["future_close"] = self.df["close"].shift(-self.future_direction_horizon)
+        return self.df
+    
+    def set_future_change(self):
+        if "future_close" not in self.df.columns:
+            self.set_future_close()
+
+        self.df["future_change"] = self.df["future_close"] - self.df["close"]
+        return self.df
+    
+    def set_future_change_pct(self):
+        if "future_change" not in self.df.columns:
+            self.set_future_change()
+
+        self.df["future_change_pct"] = (self.df["future_change"] / self.df["close"]) * 100
+        return self.df
+    
+    def set_future_direction(self):
+        if "future_change_pct" not in self.df.columns:
+            self.set_future_change_pct()
+
+        self.future_direction_standard_pct = 0.5 
+        self.df["future_direction"] = self.df["future_change_pct"].apply(
+            lambda x: "UP" if x > self.future_direction_standard_pct/100 \
+                else ("DOWN" if x < -self.future_direction_standard_pct/100 \
+                    else "FLAT")
+        )
+        return self.df
+    
+    def set_future_direction_num(self):
+        if "future_change_pct" not in self.df.columns:
+            self.set_future_change_pct()
+
+        self.df["future_direction_num"] = self.df["future_change_pct"].apply(
+            lambda x: 1 if x > 0 else (-1 if x < -0 else 0)
+        )
+        return self.df
+    
+    def set_signed_volume(self):
+        if "future_direction_num" not in self.df.columns:
+            self.set_future_direction_num()
+
+        self.df["signed_volume"] = self.df["volume"] * self.df["future_direction_num"]
+        return self.df
+    
+    def set_pos_volume(self):
+        if "signed_volume" not in self.df.columns:
+            self.set_signed_volume()
+
+        self.df["pos_volume"] = self.df["signed_volume"].apply(lambda x: x if x > 0 else 0)
+        return self.df
+    
+    def set_neg_volume(self):
+        if "signed_volume" not in self.df.columns:
+            self.set_signed_volume()
+
+        self.df["neg_volume"] = self.df["signed_volume"].apply(lambda x: abs(x) if x < 0 else 0)
+        return self.df
+    
+    def set_volume_imbalance(self):
+        if "pos_volume" not in self.df.columns:
+            self.set_pos_volume()
+
+        if "neg_volume" not in self.df.columns:
+            self.set_neg_volume()
+
+        self.df["volume_delta"] = self.df["pos_volume"] - self.df["neg_volume"]
+
+        self.df["volume_imbalance"] = (
+            self.df["pos_volume"] - self.df["neg_volume"]
+        ) / (
+            self.df["pos_volume"] + self.df["neg_volume"] + 1e-9
+        )
+        return self.df
+    
+    

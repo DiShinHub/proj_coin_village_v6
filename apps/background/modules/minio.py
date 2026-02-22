@@ -53,7 +53,7 @@ class MinioModule():
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, method : {inspect.currentframe().f_code.co_name}, error : {str(e)}")
             
-    def upload_file(self, minio_file_path, local_file_path):
+    def upload_file(self, minio_file_path, local_file_path, content_type=None, metadata=None):
         """
         def description : 파일 업로드
 
@@ -64,7 +64,13 @@ class MinioModule():
         """
         
         try:
-            self.external_client.fput_object(self.minio_bucket, minio_file_path, local_file_path)
+            self.external_client.fput_object(
+                self.minio_bucket, 
+                minio_file_path, 
+                local_file_path,
+                content_type=content_type,
+                metadata=metadata
+            )
             
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, method : {inspect.currentframe().f_code.co_name}, error : {str(e)}")

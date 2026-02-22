@@ -14,7 +14,7 @@ import inspect
 class ExChangeUpbit(ExChangeCalculator):
 
     def __init__(self):
-        self.log = system_module_log
+        super().__init__()
         config = Config()
 
         self.upbit = config.set_upbit()
@@ -217,72 +217,8 @@ class ExChangeUpbit(ExChangeCalculator):
         self.df = self.get_ohlcv(interval, date, count)
         return self.df
     
-    @try_again(num=4)
-    def get_future_prices(self, date, days, interval):
-
-        # 기준 시점 datetime으로 변환
-        start_time = datetime.fromisoformat(date)
-
-        # n일 뒤 날짜 계산
-        end_date = (start_time + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-
-        # pyupbit에서 필요한 데이터를 분 단위로 가져오기 (최소 데이터 확보)
-        if interval == "minute5":
-            count = int((1440/5)*days)
-
-        elif interval == "minute15":
-            count = int((1440/15)*days)
-
-        elif interval == "minute30":
-            count = int((1440/30)*days)
-
-        elif interval == "minute60":
-            count = int((1440/60)*days)
-
-        else:
-            self.log.info(f"{inspect.currentframe().f_code.co_name}, error : not allowed interval")
-            return
-
-        df = pyupbit.get_ohlcv(
-            self.ticker, interval=interval, to=self.adjust_date(end_date, interval), count=count
-        )
-
-        # 기준 시점 이후 필요한 시간 간격 정의
-        intervals = {
-            "on_time": start_time,
-            "after_5min": start_time + timedelta(minutes=5),
-            "after_15min": start_time + timedelta(minutes=15),
-            "after_30min": start_time + timedelta(minutes=30),
-            "after_1hour": start_time + timedelta(hours=1),
-            "after_4hour": start_time + timedelta(hours=4),
-            "after_12hour": start_time + timedelta(hours=12),
-            "after_1day": start_time + timedelta(days=1),
-            "after_2day": start_time + timedelta(days=2),
-            "after_3day": start_time + timedelta(days=3),
-            "after_4day": start_time + timedelta(days=4),
-            "after_5day": start_time + timedelta(days=5),
-            "after_6day": start_time + timedelta(days=6),
-        }
-
-        # 미래 종가 데이터를 저장할 딕셔너리
-        future_prices = {}
-
-        # 기준 시간 이후 데이터 필터링
-        for label, target_time in intervals.items():
-            try:
-                # 가장 가까운 타임스탬프 찾기
-                nearest_idx = df.index.get_indexer([target_time], method='backfill')[0]
-                nearest_time = df.index[nearest_idx]
-                future_prices[label] = df.loc[nearest_time, 'close']
-
-            except KeyError:
-                # 타임스탬프가 데이터 범위에 없을 경우 처리
-                future_prices[label] = None
-
-        return future_prices
-    
     """
-    additional
+    helper
     """
     def adjust_date(self, date: str, interval: str) -> str:
         """
