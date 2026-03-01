@@ -134,8 +134,8 @@ class CvResearchProd01Gen01(ServiceHandler):
 
             # 업로드
             self.minio.upload_file(
-                minio_path = minio_path, 
-                local_path = local_path, 
+                minio_file_path = minio_path, 
+                local_file_path = local_path, 
                 content_type = "image/png", 
                 metadata = {
                     "Content-Disposition": "inline"
@@ -187,8 +187,8 @@ class CvResearchProd01Gen01(ServiceHandler):
 
             # 업로드
             self.minio.upload_file(
-                minio_path = minio_path, 
-                local_path = local_path, 
+                minio_file_path = minio_path, 
+                local_file_path = local_path, 
                 content_type = "image/png", 
                 metadata = {
                     "Content-Disposition": "inline"

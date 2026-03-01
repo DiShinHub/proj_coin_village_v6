@@ -30,6 +30,7 @@ class runnableServicesDao():
             WHERE
                 activate_yn = 'Y'
                 AND delete_yn = 'N'
+                AND activate_on = 'background'
             ORDER BY
                 seq ASC;
         """
