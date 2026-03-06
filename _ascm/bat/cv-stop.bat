@@ -20,6 +20,8 @@ cd /d "%~dp0desktop"
 
 taskkill /FI "WINDOWTITLE eq cv-desktop-1*" /F
 taskkill /FI "WINDOWTITLE eq cv-desktop-2*" /F
+taskkill /FI "WINDOWTITLE eq pc-gui*" /F
+taskkill /FI "WINDOWTITLE eq webbot*" /F
 
 @REM echo.
 @REM echo [-] python 
@@ -30,7 +32,6 @@ echo.
 echo [5] Selenium 
 taskkill /IM chromedriver.exe /F
 taskkill /IM msedgedriver.exe /F
-
 
 echo.
 echo =========================

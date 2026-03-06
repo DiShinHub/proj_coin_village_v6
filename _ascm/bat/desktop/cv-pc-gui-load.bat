@@ -1,4 +1,4 @@
 @echo off
 
-cd ../../../desktop/pc-gui/program/main
-main.exe
+cd ../../../desktop/pc-gui
+start "pc-gui" venv\Scripts\python.exe main.py

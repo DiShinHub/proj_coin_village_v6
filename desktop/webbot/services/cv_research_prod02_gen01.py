@@ -28,7 +28,7 @@ class CvResearchProd02Gen01:
         
         keyboard.add_hotkey("space+right", self.next_group)
         keyboard.add_hotkey("space+left", self.prev_group)
-        self.rotate_group()
+        self.rotate_group() 
 
     def rotate_group(self):
 
@@ -36,13 +36,12 @@ class CvResearchProd02Gen01:
             while True:
                 threads = []
                 drivers = []
-                start_time = time.time()
 
                 # 그룹 레이아웃 
                 target_group = self.groups[self.index]
                 screen_width, screen_height = self.seleniums.get_screen_size()
                 layout = self.seleniums.get_layout(screen_width, screen_height, target_group["split"])
-
+ 
                 # 드라이버 실행
                 i = 0
                 for url in target_group["urls"]:
@@ -59,13 +58,13 @@ class CvResearchProd02Gen01:
                     t.start()
                     threads.append(t)
                     i += 1
-                    
+
                 # 다음 이벤트 대기
                 self.change_event.clear()
                 triggered = self.change_event.wait(timeout=self.rotate_term)
                 if not triggered:
                     self.index = (self.index + 1) % len(self.groups)
-
+                    
                 # 쓰레드, 드라이버 종료
                 for t in threads:
                     if t.is_alive():
@@ -78,12 +77,10 @@ class CvResearchProd02Gen01:
             self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
 
     def next_group(self):
-        print(">> 다음 그룹")
         self.index = (self.index + 1) % len(self.groups)
         self.change_event.set()
 
     def prev_group(self):
-        print(">> 이전 그룹")
         self.index = (self.index - 1) % len(self.groups)
         self.change_event.set()
     

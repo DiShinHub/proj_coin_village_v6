@@ -8,4 +8,7 @@ venv/
 .ipynb_checkpoints
 
 backup/
+program/
 *.sql
+*.png
+logs

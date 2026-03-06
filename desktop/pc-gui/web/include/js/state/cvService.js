@@ -68,7 +68,7 @@ window.CvServiceState = {
                             <option value="interval" ${item.execution_method === "interval" ? "selected" : ""}>Interval</option>
                             <option value="schedule" ${item.execution_method === "schedule" ? "selected" : ""}>Schedule</option>
                             <option value="socket" ${item.execution_method === "socket" ? "selected" : ""}>Socket</option>
-                            <option value="socket" ${item.execution_method === "webbot" ? "selected" : ""}>Webbot</option>
+                            <option value="webbot" ${item.execution_method === "webbot" ? "selected" : ""}>Webbot</option>
                         </select>
                     </div>
                 </div>
