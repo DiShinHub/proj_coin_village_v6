@@ -1,6 +1,8 @@
 from flask import Flask
 import subprocess
 import sys
+import os
+import signal
 
 """
 bot listner api
@@ -21,8 +23,11 @@ def start_rotate_urls():
 def stop_rotate_urls():
     global proc_cv_research_prod02_gen01
     if proc_cv_research_prod02_gen01:
-        proc_cv_research_prod02_gen01.terminate()
+        
+        #proc_cv_research_prod02_gen01.terminate()
+        os.killpg(proc_cv_research_prod02_gen01.pid, signal.SIGTERM)
         proc_cv_research_prod02_gen01 = None
+        
     return "stopped"
 
 if __name__ == "__main__":

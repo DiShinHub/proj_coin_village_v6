@@ -520,7 +520,54 @@ class ExChangeCalculator():
         return self.df
     
     def set_ichimoku_cloud(self):
-        return
+
+        high = self.df["high"]
+        low = self.df["low"]
+        close = self.df["close"]
+
+        # 전환선 (Tenkan-sen)
+        period9_high = high.rolling(window=9).max()
+        period9_low = low.rolling(window=9).min()
+        self.df["tenkan_sen"] = (period9_high + period9_low) / 2
+
+        # 기준선 (Kijun-sen)
+        period26_high = high.rolling(window=26).max()
+        period26_low = low.rolling(window=26).min()
+        self.df["kijun_sen"] = (period26_high + period26_low) / 2
+
+        # 선행스팬 A (Senkou Span A)
+        self.df["senkou_span_a"] = (
+            (self.df["tenkan_sen"] + self.df["kijun_sen"]) / 2
+        ).shift(26)
+
+        # 선행스팬 B (Senkou Span B)
+        period52_high = high.rolling(window=52).max()
+        period52_low = low.rolling(window=52).min()
+        self.df["senkou_span_b"] = (
+            (period52_high + period52_low) / 2
+        ).shift(26)
+
+        # 후행스팬 (Chikou Span)
+        self.df["chikou_span"] = close.shift(-26)
+
+        return self.df
+    
+    def set_ichimoku_cloud_state(self):
+
+        if "senkou_span_a" not in self.df.columns:
+            self.set_ichimoku()
+
+        cloud_top = self.df[["senkou_span_a","senkou_span_b"]].max(axis=1)
+        cloud_bottom = self.df[["senkou_span_a","senkou_span_b"]].min(axis=1)
+
+        self.df["above_cloud"] = (self.df["close"] > cloud_top).astype(int)
+        self.df["below_cloud"] = (self.df["close"] < cloud_bottom).astype(int)
+        self.df["inside_cloud"] = (
+            (self.df["close"] <= cloud_top) &
+            (self.df["close"] >= cloud_bottom)
+        ).astype(int)
+
+        return self.df
     
     """
     캔들스틱

@@ -13,6 +13,8 @@ class CvResearchProd02Gen01:
         self.seleniums = Seleniums()
         self.runnable_services_dao = runnableServicesDao()
 
+        self.change_event = threading.Event()
+        self.index = 0
         self.groups = None
         self.rotate_term = None
         self.set_service_options()
@@ -23,19 +25,21 @@ class CvResearchProd02Gen01:
         self.rotate_term = res["service_options"]["rotate_term"]
 
     def main(self):
+        
+        keyboard.add_hotkey("space+right", self.next_group)
+        keyboard.add_hotkey("space+left", self.prev_group)
         self.rotate_group()
 
     def rotate_group(self):
 
-        index = 0
-        threads = []
-        drivers = []
-
         try:
             while True:
+                threads = []
+                drivers = []
+                start_time = time.time()
 
                 # 그룹 레이아웃 
-                target_group = self.groups[index]
+                target_group = self.groups[self.index]
                 screen_width, screen_height = self.seleniums.get_screen_size()
                 layout = self.seleniums.get_layout(screen_width, screen_height, target_group["split"])
 
@@ -55,26 +59,12 @@ class CvResearchProd02Gen01:
                     t.start()
                     threads.append(t)
                     i += 1
-
-                # 키보드 입력, 타임 로테이트 대기 
-                start_time = time.time()
-                while True:
-
-                    if keyboard.is_pressed("space") and keyboard.is_pressed("right"):
-                        print(">> 다음 그룹")
-                        index = (index + 1) % len(self.groups)
-                        break
-
-                    if keyboard.is_pressed("space") and keyboard.is_pressed("left"):
-                        print(">> 이전 그룹")
-                        index = (index - 1) % len(self.groups)
-                        break
-
-                    if time.time() - start_time >= self.rotate_term:
-                        index = (index + 1) % len(self.groups)
-                        break
-
-                    time.sleep(0.1)
+                    
+                # 다음 이벤트 대기
+                self.change_event.clear()
+                triggered = self.change_event.wait(timeout=self.rotate_term)
+                if not triggered:
+                    self.index = (self.index + 1) % len(self.groups)
 
                 # 쓰레드, 드라이버 종료
                 for t in threads:
@@ -87,6 +77,16 @@ class CvResearchProd02Gen01:
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
 
+    def next_group(self):
+        print(">> 다음 그룹")
+        self.index = (self.index + 1) % len(self.groups)
+        self.change_event.set()
+
+    def prev_group(self):
+        print(">> 이전 그룹")
+        self.index = (self.index - 1) % len(self.groups)
+        self.change_event.set()
+    
     def open_url(self, driver, url):
         driver.get(url)
 

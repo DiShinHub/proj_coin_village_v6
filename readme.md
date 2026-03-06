@@ -22,17 +22,15 @@ git clone https://github.com/DiShinHub/proj_coin_village_v5
 - env 설정
 담당자 문의
 
-- 프로젝트 셋팅
-    └── 소스 빌드
-    ./cv-docker-compose-build.bat
+- db 
+담당자 문의
 
-    └── DB 이닛
-    ./cv-postgres-init.bat
+- 소스 빌드 (아직 실험 안함)
+./_ascm/cv-build.bat
 
 - 소스 실행
-./cv-docker-compose-reload.bat
+./_ascm/cv-start.bat
 </pre>
----
 
 ### 패키지 추가
 ./pyproject.toml 수정
@@ -42,50 +40,30 @@ git clone https://github.com/DiShinHub/proj_coin_village_v5
 ### **폴더 트리**
 
 <pre>
-📦 proj_cv5
-├── 📂 apps 
-│   ├── 📂 scheduler # 스케쥴러 앱
-│   │   ├── 📂 core
-│   │   │   └──{core}.py
-│   │   ├── 📂 service
-│   │   │   ├── {service}_{version}.py
-│   │   │   └── {service}_{version}.py
-│   ├── 📂 task_worker # 테스크 워커 앱
-│   │   ├── 📂 core
-│   │   │   └──{core}.py
-│   │   ├── 📂 service
-│   │   │   ├── {service}_{version}.py
-│   │   │   └── {service}_{version}.py
-├── 📂 docker
-├── 📂 docker-compose
-├── 📂 shares # 공용 파일 (컨테이너 생성 시 주입 됨)
-│   ├── 📂 constance
-│   ├── 📂 config
-│   ├── 📂 dao
-│   ├── 📂 decorations
-│   ├── 📂 functions
-│   └── 📂 middlewares
-│   └── 📂 modules
+📦 proj_cv6
+├── _ascm (Automation Script Command Manager)
+│   └── bat
+│   └── sh
+├── core-system
+│   ├── 📂 apps                 # 도커 
+│   │   ├── 📂 api              # api 
+│   │   └── 📂 background       # background형 서비스 
+│   ├── 📂 docker               # 도커 
+│   ├── 📂 docker-compose       # 도커 컴포즈
+│   ├── 📂 labs                 # 주피터
+│   ├── poetry.lock             # 의존성 관리
+│   ├── pyproject.toml          # 의존성 관리 
+├── desktop
+│   └── 📂 pc-gui              # pc-gui
+│   └── 📂 web-bot             # pc-gui
 ├── .gitignore            # Git 제외 파일
-├── .git                        # Git 
-├── poetry.lock         # 의존성 관리
-├── pyproject.toml   # 의존성 관리 
-└── [README.md](http://readme.md/)       # 프로젝트 개요
+├── .git                  # Git 
+└── [README.md]       # 프로젝트 개요
+
 </pre>
----
 
 ### **DB 백업 및 복구**
-1. 백업
-docker ps
-docker exec -it CV-db-postgres-compose bash
-cd /var/lib/postgresql/data
-pg_dump -U postgres -d postgres > backup.sql
-
-2. 복구
-docker ps
-docker exec -it CV-db-postgres-compose bash
-cd /var/lib/postgresql/data
-psql -U postgres -d postgres -f backup.sql
+_ascm\bat\postgres\_readme.md 참조 
 
 ### mlflow, postgres 설정
 
@@ -105,8 +83,30 @@ docker-compose ...
 4. mlflow를 사용하는 서비스에서 아래 라이브러리가 요구 된다
 boto3, psycopg2
 
+### minio 설정
 
-### disk.vhdx 강제 압축 (핵심)
+{작업 중}
+
+mc 컨테이너 실행
+
+mc 컨테이너 접속
+docker-composer exec -it {} bash 
+
+
+mc admin user svcacct add myminio myuser
+mc alias set myminio http://minio:9000 ROOT_USER ROOT_PASSWORD
+Added `myminio` successfully.
+
+mc admin user add myminio appuser apppassword123
+mc admin user list myminio
+mc admin policy attach myminio readwrite --user appuser
+
+mc admin user svcacct add myminio appuser
+Access Key: AKIA....
+Secret Key: wJalrXUtnFEMI/K7MDENG/bPxRfiCY
+
+
+### disk.vhdx 강제 압축 
 
 0. 관리자 PowerShell :
 wsl --shutdown
