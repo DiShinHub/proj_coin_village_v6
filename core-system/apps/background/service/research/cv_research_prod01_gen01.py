@@ -7,6 +7,7 @@ from background.modules.redis import r as redis_single
 from background.dao.eda_dao import EdaDao
 
 from sklearn.ensemble import RandomForestClassifier
+import shap
 
 import pandas as pd
 import numpy as np 
@@ -208,6 +209,68 @@ class CvResearchProd01Gen01(ServiceHandler):
         finally:
             if os.path.exists(local_path):
                 os.remove(local_path)
+                
+    def upload_feature_importance_shap(self, df, term):
+
+        try:
+            up, down = self.get_feature_importance_shap(df)
+
+            up = up.copy()
+            down = down.copy()
+
+            up["direction"] = "UP"
+            down["direction"] = "DOWN"
+
+            result = pd.concat([up, down])
+
+            plt.figure(figsize=(10, 8))
+
+            sns.barplot(
+                x="mean_shap",
+                y="feature",
+                hue="direction",
+                data=result,
+                dodge=False
+            )
+
+            plt.title("Feature Direction (UP vs DOWN)")
+            plt.tight_layout()
+
+            # 저장경로
+            local_path = self.minio.generate_local_path("png")
+            minio_path = f"eda/feature_direction/{self.ticker}/{term}.png"
+
+            # 로컬 저장
+            plt.savefig(
+                local_path,
+                dpi=300,
+                bbox_inches="tight"
+            )
+            plt.close()
+
+            # 업로드
+            self.minio.upload_file(
+                minio_file_path=minio_path,
+                local_file_path=local_path,
+                content_type="image/png",
+                metadata={
+                    "Content-Disposition": "inline"
+                })
+
+            # DB 저장
+            params = {}
+            params["exchange"] = "upbit"
+            params["ticker"] = self.ticker
+            params["minio_path"] = minio_path
+            params["description"] = "feature direction (shap)"
+            self.eda_dao.upsert_eda_images(params)
+
+        except Exception as e:
+            self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
+
+        finally:
+            if os.path.exists(local_path):
+                os.remove(local_path)
 
     def get_feature_importance(self, df):
 
@@ -243,6 +306,47 @@ class CvResearchProd01Gen01(ServiceHandler):
         }).sort_values(by="importance", ascending=False)
 
         return importance.head(30)
+
+    def get_feature_importance_shap(self, df):
+    
+        df = df.copy()
+
+        X = df.drop(columns=["datetime", "target", "future_close", "return"], errors="ignore")
+        y = df["target"]
+
+        X = X.select_dtypes(include=[np.number])
+        X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        model = RandomForestClassifier(
+            n_estimators=300,
+            max_depth=8,
+            random_state=42,
+            n_jobs=-1,
+            class_weight="balanced"
+        )
+
+        model.fit(X, y)
+
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
+
+        # shap version 대응
+        if isinstance(shap_values, list):
+            shap_matrix = shap_values[1]
+        else:
+            shap_matrix = shap_values[:, :, 1]
+
+        shap_df = pd.DataFrame(shap_matrix, columns=X.columns)
+
+        result = pd.DataFrame({
+            "feature": X.columns,
+            "mean_shap": shap_df.mean()
+        })
+
+        up = result.sort_values("mean_shap", ascending=False).head(15)
+        down = result.sort_values("mean_shap").head(15)
+
+        return up, down
 
     def cut_by_days(self, df, target_date, days):
         start = target_date - datetime.timedelta(days=days)

@@ -520,6 +520,24 @@ class ExChangeCalculator():
         return self.df
     
     def set_ichimoku_cloud(self):
+        """
+        tenkan_sen (전환선)
+        (최근 9봉 최고가 + 최근 9봉 최저가) / 2
+
+        kijun_sen (기준선)
+        (최근 26봉 최고가 + 최근 26봉 최저가) / 2
+
+        senkou_span_a (선행스팬 A)
+        (tenkan_sen + kijun_sen) / 2
+        → 26봉 미래로 shift
+
+        senkou_span_b (선행스팬 B)
+        (최근 52봉 최고가 + 최근 52봉 최저가) / 2
+        → 26봉 미래로 shift
+
+        chikou_span (후행스팬)
+        현재 close → 26봉 과거로 shift
+        """
 
         high = self.df["high"]
         low = self.df["low"]
@@ -553,13 +571,61 @@ class ExChangeCalculator():
         return self.df
     
     def set_ichimoku_cloud_state(self):
+        """
+        cloud_top
+        max(senkou_span_a, senkou_span_b)
+
+        cloud_bottom
+        min(senkou_span_a, senkou_span_b)
+
+        above_cloud
+        close > cloud_top
+
+        below_cloud
+        close < cloud_bottom
+
+        inside_cloud
+        cloud_bottom ≤ close ≤ cloud_top
+
+        bull_cloud
+        senkou_span_a > senkou_span_b
+
+        bear_cloud
+        senkou_span_a < senkou_span_b
+
+        enter_bull_cloud
+        enter_cloud == 1 AND bull_cloud == 1
+
+        enter_bear_cloud
+        enter_cloud == 1 AND bear_cloud == 1
+
+        break_up_cloud
+        이전: 구름 내부 또는 아래
+        현재: 구름 위
+        상승 돌파
+
+        break_down_cloud
+        이전: 구름 내부 또는 위
+        현재: 구름 아래
+        하락 돌파
+        
+        cloud_mid
+        (senkou_span_a + senkou_span_b) / 2
+
+        cloud_slope
+        cloud_mid.diff()
+
+        entry_cloud_slope
+        enter_cloud 발생 시점의 cloud_slope
+        """
 
         if "senkou_span_a" not in self.df.columns:
-            self.set_ichimoku()
+            self.set_ichimoku_cloud()
 
         cloud_top = self.df[["senkou_span_a","senkou_span_b"]].max(axis=1)
         cloud_bottom = self.df[["senkou_span_a","senkou_span_b"]].min(axis=1)
 
+        # 가격 위치
         self.df["above_cloud"] = (self.df["close"] > cloud_top).astype(int)
         self.df["below_cloud"] = (self.df["close"] < cloud_bottom).astype(int)
         self.df["inside_cloud"] = (
@@ -567,6 +633,168 @@ class ExChangeCalculator():
             (self.df["close"] >= cloud_bottom)
         ).astype(int)
 
+        # 구름 방향
+        self.df["bull_cloud"] = (self.df["senkou_span_a"] > self.df["senkou_span_b"]).astype(int)
+        self.df["bear_cloud"] = (self.df["senkou_span_a"] < self.df["senkou_span_b"]).astype(int)
+
+        prev_above = self.df["above_cloud"].shift(1)
+        prev_below = self.df["below_cloud"].shift(1)
+        prev_inside = self.df["inside_cloud"].shift(1)
+
+        # 구름 진입
+        self.df["enter_cloud"] = (
+            (self.df["inside_cloud"] == 1) &
+            (prev_inside == 0)
+        ).astype(int)
+
+        self.df["enter_bull_cloud"] = (
+            (self.df["enter_cloud"] == 1) &
+            (self.df["bull_cloud"] == 1)
+        ).astype(int)
+
+        self.df["enter_bear_cloud"] = (
+            (self.df["enter_cloud"] == 1) &
+            (self.df["bear_cloud"] == 1)
+        ).astype(int)
+
+        # 구름 돌파
+        self.df["break_up_cloud"] = (
+            (self.df["above_cloud"] == 1) &
+            ((prev_inside == 1) | (prev_below == 1))
+        ).astype(int)
+
+        self.df["break_down_cloud"] = (
+            (self.df["below_cloud"] == 1) &
+            ((prev_inside == 1) | (prev_above == 1))
+        ).astype(int)
+
+        # 구름 중심선
+        cloud_mid = (self.df["senkou_span_a"] + self.df["senkou_span_b"]) / 2
+        self.df["cloud_mid"] = cloud_mid
+
+        # 구름 기울기
+        self.df["cloud_slope"] = cloud_mid.diff()
+
+        # 진입 시점 기울기 기록
+        self.df["entry_cloud_slope"] = (
+            self.df["cloud_slope"]
+            .where(self.df["enter_cloud"] == 1)
+        )
+        return self.df
+    
+    def set_ichimoku_cloud_position_state(self):
+        """
+        state	의미
+        1	양운 위
+        2	양운 내부 상단
+        3	양운 내부 하단
+        4	양운 아래
+        5	음운 위
+        6	음운 내부 상단
+        7	음운 내부 하단
+        8	음운 아래
+        """
+
+        if "senkou_span_a" not in self.df.columns:
+            self.set_ichimoku_cloud()
+
+        span_a = self.df["senkou_span_a"]
+        span_b = self.df["senkou_span_b"]
+        close = self.df["close"]
+
+        cloud_top = self.df[["senkou_span_a","senkou_span_b"]].max(axis=1)
+        cloud_bottom = self.df[["senkou_span_a","senkou_span_b"]].min(axis=1)
+        cloud_mid = (span_a + span_b) / 2
+
+        bull = span_a > span_b
+        bear = span_a < span_b
+
+        state = np.full(len(self.df), np.nan)
+
+        # 양운
+        state[(bull) & (close > cloud_top)] = 1
+        state[(bull) & (close <= cloud_top) & (close > cloud_mid)] = 2
+        state[(bull) & (close <= cloud_mid) & (close >= cloud_bottom)] = 3
+        state[(bull) & (close < cloud_bottom)] = 4
+
+        # 음운
+        state[(bear) & (close > cloud_top)] = 5
+        state[(bear) & (close <= cloud_top) & (close > cloud_mid)] = 6
+        state[(bear) & (close <= cloud_mid) & (close >= cloud_bottom)] = 7
+        state[(bear) & (close < cloud_bottom)] = 8
+
+        self.df["cloud_position_state"] = state
+
+        return self.df
+    
+    def set_ichimoku_cloud_break_state(self):
+        """
+        cloud_entry_price
+        enter_cloud 발생 시 close
+
+        bar_index
+        0,1,2,3...
+
+        cloud_entry_index
+        enter_cloud 발생 bar_index
+
+        duration
+        현재 bar_index - cloud_entry_index
+
+        cloud_break_slope
+        (돌파 가격 - 진입 가격) / duration
+        """
+
+        if "enter_cloud" not in self.df.columns:
+            self.set_ichimoku_cloud_state()
+            
+        # 구름 진입 가격 기록
+        self.df["cloud_entry_price"] = self.df["close"].where(self.df["enter_cloud"] == 1)
+
+        # forward fill로 현재 구름 구간의 진입 가격 유지
+        self.df["cloud_entry_price"] = self.df["cloud_entry_price"].ffill()
+
+        # 진입 index 기록
+        self.df["bar_index"] = np.arange(len(self.df))
+
+        self.df["cloud_entry_index"] = np.where(
+            self.df["enter_cloud"] == 1,
+            self.df["bar_index"],
+            np.nan
+        )
+
+        self.df["cloud_entry_index"] = self.df["cloud_entry_index"].ffill()
+
+        # 기간
+        duration = self.df["bar_index"] - self.df["cloud_entry_index"]
+
+        # slope 계산
+        self.df["cloud_break_slope"] = (
+            (self.df["close"] - self.df["cloud_entry_price"]) / duration
+        )
+
+        # 돌파 시점에서만 유효
+        self.df["cloud_break_slope"] = self.df["cloud_break_slope"].where(
+            (self.df["break_up_cloud"] == 1) | (self.df["break_down_cloud"] == 1)
+        )
+        
+        # 퍼센티지 변화
+        self.df["cloud_break_return"] = (
+            (self.df["close"] - self.df["cloud_entry_price"]) /
+            self.df["cloud_entry_price"]
+        )
+
+        # 기간
+        duration = duration.replace(0, np.nan)
+
+        # 퍼센티지 slope
+        self.df["cloud_break_slope_pct"] = (self.df["cloud_break_return"] / duration * 100) 
+
+        # 돌파 시점만 유지
+        self.df["cloud_break_slope_pct"] = self.df["cloud_break_slope_pct"].where(
+            (self.df["break_up_cloud"] == 1) |
+            (self.df["break_down_cloud"] == 1)
+        )
         return self.df
     
     """
