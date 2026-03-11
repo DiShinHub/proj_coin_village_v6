@@ -393,7 +393,55 @@ class ExChangeCalculator():
         return self.df
 
     def set_atr_ratio(self):
+        if "atr" not in self.df.columns:
+            self.set_atr()
+            
         self.df['atr_ratio'] = self.df['atr'].astype(float) / self.df['close'].astype(float)
+        return self.df
+    
+    def set_atr_ratio_ma(self):
+        if "atr_ratio" not in self.df.columns:
+            self.set_atr_ratio()
+
+        self.df["atr_ratio_ma"] = self.df["atr_ratio"].ewm(span=20).mean()
+        return self.df
+
+    def set_adx(self, period=14):
+
+        self.df["prev_close"] = self.df["close"].shift(1)
+        self.df["prev_high"] = self.df["high"].shift(1)
+        self.df["prev_low"] = self.df["low"].shift(1)
+
+        # True Range
+        self.df["tr"] = self.df[["high","low","prev_close"]].apply(
+            lambda x: max(
+                x["high"] - x["low"],
+                abs(x["high"] - x["prev_close"]),
+                abs(x["low"] - x["prev_close"])
+            ),
+            axis=1
+        )
+
+        # Directional movement
+        self.df["+dm"] = self.df["high"] - self.df["prev_high"]
+        self.df["-dm"] = self.df["prev_low"] - self.df["low"]
+
+        self.df["+dm"] = self.df["+dm"].where((self.df["+dm"] > self.df["-dm"]) & (self.df["+dm"] > 0), 0)
+        self.df["-dm"] = self.df["-dm"].where((self.df["-dm"] > self.df["+dm"]) & (self.df["-dm"] > 0), 0)
+
+        # ATR
+        self.df["atr"] = self.df["tr"].rolling(period).mean()
+
+        # DI
+        self.df["+di"] = 100 * (self.df["+dm"].rolling(period).mean() / self.df["atr"])
+        self.df["-di"] = 100 * (self.df["-dm"].rolling(period).mean() / self.df["atr"])
+
+        # DX
+        self.df["dx"] = (abs(self.df["+di"] - self.df["-di"]) / (self.df["+di"] + self.df["-di"])) * 100
+
+        # ADX
+        self.df["adx"] = self.df["dx"].rolling(period).mean()
+
         return self.df
     
     def set_cdlengulfing(self):

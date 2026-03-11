@@ -23,7 +23,7 @@ class CvResearchProd01Gen01(ServiceHandler):
     Generation : 01 
     
     Desc : 
-    - heatmaps_volume_time_week
+    - 도날드 덕 
     """
     pref_slack_msg_box = ""
 
@@ -61,293 +61,120 @@ class CvResearchProd01Gen01(ServiceHandler):
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
     
-    def paint_eda(self):
 
-        interval_ = "minute5"
-        days = 93
-        count = 200
-        to_ = datetime.datetime.now()
-        from_ = to_ - datetime.timedelta(days=days)
+    def decide_regime(self, anchor_interval="minute5"):
 
-        self.upbit.set_ohlcvs(
-            interval=interval_, 
-            days=days, 
-            count=count, 
-            from_=from_, 
-            to_=to_
-        )
+        anchor_interval = "minute5"
+        data = self.fetch_all_ohlcv()
+        interval_regimes = {}
+        for interval, df in data.items():
+            interval_regimes[interval] = self.calc_interval_regime(df)
+            data[interval] = df
 
-        df = self.upbit.set_all_features()
+        df = data[anchor_interval]
+        row = df.iloc[-1]
 
-        df_1w  = self.cut_by_days(df, to_, 7)
-        df_2w  = self.cut_by_days(df, to_, 14)
-        df_3w  = self.cut_by_days(df, to_, 21)
-        df_1m  = self.cut_by_days(df, to_, 30)
-        df_2m  = self.cut_by_days(df, to_, 60)
-        df_3m  = df
-        
-        self.upload_volume_imbalance_time(df_1w, "1w")
-        self.upload_volume_imbalance_time(df_2w, "2w")
-        self.upload_volume_imbalance_time(df_3w, "3w")
-        self.upload_volume_imbalance_time(df_1m, "1m")
-        self.upload_volume_imbalance_time(df_2m, "2m")
-        self.upload_volume_imbalance_time(df_3m, "3m")
+        # -----------------
+        # multi timeframe
+        # -----------------
+        micro = ["minute1", "minute3", "minute5"]
+        mid = ["minute10", "minute15", "minute30", "minute60"]
+        macro = ["minute240", "day"]
 
-        self.upload_feature_importance(df_1w, "1w")
-        self.upload_feature_importance(df_2w, "2w")
-        self.upload_feature_importance(df_3w, "3w")
-        self.upload_feature_importance(df_1m, "1m")
-        self.upload_feature_importance(df_2m, "2m")
-        self.upload_feature_importance(df_3m, "3m")
+        micro_score = sum(interval_regimes[i] == "TREND" for i in micro)
+        mid_score = sum(interval_regimes[i] == "TREND" for i in mid)
+        macro_score = sum(interval_regimes[i] == "TREND" for i in macro)
 
-    
-    def upload_volume_imbalance_time(self, df, term):
-        
-        local_path = None
-        try:
-            if "volume_imbalance" not in df.columns:
-                for col in df.columns:
-                    self.log.info(col)
+        micro_trend = micro_score >= 2
+        mid_trend = mid_score >= 2
+        macro_trend = macro_score >= 1
 
-            pivot_vol = df.pivot_table(
-                values="volume_imbalance",
-                index="hour",
-                columns="weekday",
-                aggfunc="mean"
-            )
+        # -----------------
+        # anchor timeframe
+        # -----------------
+        df = data[anchor_interval]
+        row = df.iloc[-1]
 
-            plt.figure(figsize=(12, 6))
-            sns.heatmap(pivot_vol, annot=True, fmt=".2f", cmap="coolwarm", center=0)
-            plt.title("Time x Volume Imbalance of UP x DOWN x SIDEAWAY")
+        boll_mean = df["bollinger_width"].rolling(100).mean().iloc[-1]
+        squeeze = row["bollinger_width"] < boll_mean * 0.7
 
-            # 저장경로 설정
-            local_path = self.minio.generate_local_path("png")
-            minio_path = f"eda/volume_imbalance_time/{self.ticker}/{term}.png"
+        atr_expand = row["atr_ratio"] > row["atr_ratio_ma"]
 
-            # 로컬에 저장
-            plt.savefig(
-                local_path,
-                dpi=300,
-                bbox_inches="tight"
-            )
+        vol_mean = df["volume"].rolling(20).mean().iloc[-1]
+        volume_expand = row["volume"] > vol_mean * 1.5
 
-            plt.close() 
+        volatility_expand = atr_expand and row["bollinger_width"] > boll_mean
 
-            # 업로드
-            self.minio.upload_file(
-                minio_file_path = minio_path, 
-                local_file_path = local_path, 
-                content_type = "image/png", 
-                metadata = {
-                    "Content-Disposition": "inline"
-                })
-            
-            # db 경로 저장
-            params = {}
-            params["exchange"] = "upbit"
-            params["ticker"] = self.ticker
-            params["minio_path"] = minio_path
-            params["description"] = ""
-            self.eda_dao.upsert_eda_images(params)
-        
-        except Exception as e:
-            self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
+        # -----------------
+        # market regime
+        # -----------------
+        if not micro_trend and not mid_trend and not macro_trend:
+            regime = "DEAD_RANGE"
 
-        finally:
-            if local_path:
-                if os.path.exists(local_path):
-                    os.remove(local_path)
+        elif squeeze and not mid_trend:
+            regime = "BREAKOUT_SETUP"
 
-    def upload_feature_importance(self, df, term):
+        elif mid_trend and volatility_expand and volume_expand:
+            regime = "TREND_START"
 
-        try:
-            importance = self.get_feature_importance(df)
+        elif macro_trend and mid_trend:
+            regime = "STRONG_TREND"
 
-            plt.figure(figsize=(10, 8))
-            sns.barplot(
-                x="importance",
-                y="feature",
-                data=importance,
-                orient="h"
-            )
-            
-            plt.title("Feature importance of UP x DOWN x SIDEAWAY")
-            plt.tight_layout()
-            
-            # 저장경로 설정
-            local_path = self.minio.generate_local_path("png")
-            minio_path = f"eda/feature_importance/{self.ticker}/{term}.png"
+        elif mid_trend:
+            regime = "TREND"
 
-            # 로컬에 저장
-            plt.savefig(
-                local_path,
-                dpi=300,
-                bbox_inches="tight"
-            )
-            plt.close() 
-
-            # 업로드
-            self.minio.upload_file(
-                minio_file_path = minio_path, 
-                local_file_path = local_path, 
-                content_type = "image/png", 
-                metadata = {
-                    "Content-Disposition": "inline"
-                })
-
-            # db 경로 저장
-            params = {}
-            params["exchange"] = "upbit"
-            params["ticker"] = self.ticker
-            params["minio_path"] = minio_path
-            params["description"] = ""
-            self.eda_dao.upsert_eda_images(params)
-        
-        except Exception as e:
-            self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
-
-        finally:
-            if os.path.exists(local_path):
-                os.remove(local_path)
-                
-    def upload_feature_importance_shap(self, df, term):
-
-        try:
-            up, down = self.get_feature_importance_shap(df)
-
-            up = up.copy()
-            down = down.copy()
-
-            up["direction"] = "UP"
-            down["direction"] = "DOWN"
-
-            result = pd.concat([up, down])
-
-            plt.figure(figsize=(10, 8))
-
-            sns.barplot(
-                x="mean_shap",
-                y="feature",
-                hue="direction",
-                data=result,
-                dodge=False
-            )
-
-            plt.title("Feature Direction (UP vs DOWN)")
-            plt.tight_layout()
-
-            # 저장경로
-            local_path = self.minio.generate_local_path("png")
-            minio_path = f"eda/feature_direction/{self.ticker}/{term}.png"
-
-            # 로컬 저장
-            plt.savefig(
-                local_path,
-                dpi=300,
-                bbox_inches="tight"
-            )
-            plt.close()
-
-            # 업로드
-            self.minio.upload_file(
-                minio_file_path=minio_path,
-                local_file_path=local_path,
-                content_type="image/png",
-                metadata={
-                    "Content-Disposition": "inline"
-                })
-
-            # DB 저장
-            params = {}
-            params["exchange"] = "upbit"
-            params["ticker"] = self.ticker
-            params["minio_path"] = minio_path
-            params["description"] = "feature direction (shap)"
-            self.eda_dao.upsert_eda_images(params)
-
-        except Exception as e:
-            self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
-
-        finally:
-            if os.path.exists(local_path):
-                os.remove(local_path)
-
-    def get_feature_importance(self, df):
-
-        df = df.copy()
-
-        X = df.drop(columns=["future_close", "future_change", "future_change_pct", "future_direction", "future_direction_num"], errors="ignore")
-        y = df["future_direction_num"]
-
-        X = X.select_dtypes(include=[np.number])
-        X = X.replace([np.inf, -np.inf], np.nan)
-        X = X.fillna(0)
-
-        valid_idx = X.index.intersection(y.index)
-        X = X.loc[valid_idx]
-        y = y.loc[valid_idx]
-
-        if len(y.unique()) < 2:
-            self.log.info("target class 부족")
-            return None
-
-        model = RandomForestClassifier(
-            n_estimators=300,
-            max_depth=8,
-            random_state=42,
-            n_jobs=-1,
-            class_weight="balanced"
-        )
-        model.fit(X, y)
-
-        importance = pd.DataFrame({
-            "feature": X.columns,
-            "importance": model.feature_importances_
-        }).sort_values(by="importance", ascending=False)
-
-        return importance.head(30)
-
-    def get_feature_importance_shap(self, df):
-    
-        df = df.copy()
-
-        X = df.drop(columns=["datetime", "target", "future_close", "return"], errors="ignore")
-        y = df["target"]
-
-        X = X.select_dtypes(include=[np.number])
-        X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
-
-        model = RandomForestClassifier(
-            n_estimators=300,
-            max_depth=8,
-            random_state=42,
-            n_jobs=-1,
-            class_weight="balanced"
-        )
-
-        model.fit(X, y)
-
-        explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(X)
-
-        # shap version 대응
-        if isinstance(shap_values, list):
-            shap_matrix = shap_values[1]
         else:
-            shap_matrix = shap_values[:, :, 1]
+            regime = "RANGE"
 
-        shap_df = pd.DataFrame(shap_matrix, columns=X.columns)
+        res = {
+            "market_regime": regime,
+            "interval_regimes": interval_regimes,
+            "micro_trend": micro_trend,
+            "mid_trend": mid_trend,
+            "macro_trend": macro_trend
+        }
 
-        result = pd.DataFrame({
-            "feature": X.columns,
-            "mean_shap": shap_df.mean()
-        })
+        print(res) 
 
-        up = result.sort_values("mean_shap", ascending=False).head(15)
-        down = result.sort_values("mean_shap").head(15)
 
-        return up, down
+    """
+    """
+    def fetch_all_ohlcv(self):
 
-    def cut_by_days(self, df, target_date, days):
-        start = target_date - datetime.timedelta(days=days)
-        return df[df["datetime"] >= start].copy()
+        intervals = [
+            "minute1",
+            "minute3",
+            "minute5",
+            "minute10",
+            "minute15",
+            "minute30",
+            "minute60",
+            "minute240",
+            "day"
+        ]
+
+        data = {}
+        for interval in intervals:
+
+            self.upbit.set_ohlcv(interval=interval, count=120)
+            self.upbit.set_atr()
+            self.upbit.set_atr_ratio()
+            self.upbit.set_atr_ratio_ma()
+            self.upbit.set_adx()
+            self.upbit.set_bollinger_width()
+
+            data[interval] = self.upbit.get_df().copy()
+
+        return data
+        
+    def calc_interval_regime(self, df):
+
+        row = df.iloc[-1]
+
+        trend_score = sum([
+            row["bollinger_width"] > 0.04,
+            row["atr_ratio"] > row["atr_ratio_ma"],
+            row["adx"] > 25
+        ])
+
+        return "TREND" if trend_score >= 2 else "RANGE"
