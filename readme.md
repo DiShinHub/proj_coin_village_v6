@@ -14,6 +14,7 @@ https://www.binance.com/en/binance-api
 
 ### mlflow, postgres 설정
 
+<pre>
 1. DB 셋팅
 docker exec -it CV-db-postgres-compose psql -U postgres
 CREATE DATABASE mlflow;
@@ -29,9 +30,11 @@ docker-compose ...
 
 4. mlflow를 사용하는 서비스에서 아래 라이브러리가 요구 된다
 boto3, psycopg2
+</pre>
 
 ### minio 설정
 
+<pre>
 {작업 중}
 mc 컨테이너 실행
 
@@ -52,7 +55,8 @@ Secret Key:
 
 이 키를 env에 넣어줘야한다.
 
-##### 소스 셋팅
+</pre>
+### 소스 셋팅
 
 <pre>
 - Docker 설치
@@ -75,10 +79,11 @@ git clone https://github.com/DiShinHub/proj_coin_village_v5
 </pre>
 
 ### 패키지 추가
+<pre>
 ./pyproject.toml 수정
 ./poetry lock 
 ./_ascm\bat\cv-docker-compose-build.bat
-
+</pre>
 ### **폴더 트리**
 
 <pre>
@@ -105,10 +110,13 @@ git clone https://github.com/DiShinHub/proj_coin_village_v5
 </pre>
 
 ### **DB 백업 및 복구**
+<pre>
 _ascm\bat\postgres\_readme.md 참조 
+</pre>
 
 ### disk.vhdx 강제 압축 
 
+<pre>
 0. 관리자 PowerShell :
 wsl --shutdown
 
@@ -125,3 +133,4 @@ exit
 
 3. Docker 재실행
 Docker Desktop 실행
+</pre>
