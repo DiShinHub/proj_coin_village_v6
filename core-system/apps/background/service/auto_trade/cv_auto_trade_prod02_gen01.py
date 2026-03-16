@@ -14,6 +14,66 @@ import multiprocessing
 import datetime
 import os
 
+class CvAutoTradeProd02Gen01(OrderbookHandler, ServiceHandler):
+    """
+    Service Name : CvAutoTradeProd02
+    Generation : 01 
+    
+    Desc : 
+    - 저점 매수
+    """
+
+    slack_post_prefix = ":owl:"
+
+    def __init__(
+            self, 
+            seq=None, 
+            service_options=None,
+            interval_options=None,
+            schedule_options=None
+        ):
+
+        OrderbookHandler.__init__(self, orderbook_key=UpbitConst.ORDERBOOK_QUEUE_KEY)
+        ServiceHandler.__init__(self, schedule_options=schedule_options, interval_options=interval_options)
+
+        self.log = Log(os.path.basename(__file__)).get_logger()
+        self.seq = seq
+        self.service_options = service_options
+        
+        self.redis = redis_single
+        self.upbit = ExChangeUpbit()
+
+        self.order_intensities = self.service_options.get("order_intensities")
+        self.order_max = self.service_options.get("order_max")
+    
+    def main(self):
+
+        try:
+            super().monitoring_order_books()
+
+        except Exception as e:
+            self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
+
+    @wait_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
+    def execute_core_process(self, ticker, key):
+        """
+        def description : 코어 프로세스 실행
+        """
+        
+        # --- 주문 강도 파싱
+        order_intensity = self.order_intensities.get(ticker)
+        
+        # --- 호가 정보 추출
+        order_book = self.redis.get_json_data(key) 
+
+        # --- 실행
+        cv_auto_trader_s2_gen01_main = CvAutoTradeProd02Gen01Core(ticker, order_intensity, order_book, self.order_max, self.seq)
+        p = multiprocessing.Process(target=cv_auto_trader_s2_gen01_main.run)
+        p.start()
+        
+        # --- 트래픽 제어 
+        time.sleep(0.25)
+        
 class CvAutoTradeProd02Gen01Core():
     slack_post_prefix = ":owl:"
     
@@ -25,6 +85,7 @@ class CvAutoTradeProd02Gen01Core():
         self.redis = redis_single
         self.upbit = ExChangeUpbit()
         self.upbit.set_ticker(ticker)
+        self.upbit.set_paper_trading(True)
         
         # --- 주입 값
         self.ticker = ticker
@@ -273,65 +334,3 @@ class CvAutoTradeProd02Gen01Core():
         self.redis.hdel_data(self.pref_order_last_dt, self.ticker)
         
         self.redis.save_msg_on_Q(msg)
-
-class CvAutoTradeProd02Gen01(OrderbookHandler, ServiceHandler):
-    """
-    Service Name : CvAutoTradeProd02
-    Generation : 01 
-    
-    Desc : 
-    - 저점 매수
-    """
-
-    slack_post_prefix = ":owl:"
-
-    def __init__(
-            self, 
-            seq=None, 
-            service_options=None,
-            interval_options=None,
-            schedule_options=None
-        ):
-
-        OrderbookHandler.__init__(self, orderbook_key=UpbitConst.ORDERBOOK_QUEUE_KEY)
-        ServiceHandler.__init__(self, schedule_options=schedule_options, interval_options=interval_options)
-
-        self.log = Log(os.path.basename(__file__)).get_logger()
-        self.seq = seq
-        self.service_options = service_options
-        
-        self.redis = redis_single
-        self.upbit = ExChangeUpbit()
-
-        self.order_intensities = self.service_options.get("order_intensities")
-        self.order_max = self.service_options.get("order_max")
-    
-    def main(self):
-
-        try:
-            super().monitoring_order_books()
-
-        except Exception as e:
-            self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
-
-    @wait_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
-    def execute_core_process(self, ticker, key):
-        """
-        def description : 코어 프로세스 실행
-        """
-        
-        # --- 주문 강도 파싱
-        order_intensity = self.order_intensities.get(ticker)
-        
-        # --- 호가 정보 추출
-        order_book = self.redis.get_json_data(key) 
-
-        # --- 실행
-        cv_auto_trader_s2_gen01_main = CvAutoTradeProd02Gen01Core(ticker, order_intensity, order_book, self.order_max, self.seq)
-        p = multiprocessing.Process(target=cv_auto_trader_s2_gen01_main.run)
-        p.start()
-        
-        # --- 트래픽 제어 
-        time.sleep(0.25)
-        
-

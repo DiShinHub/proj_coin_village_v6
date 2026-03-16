@@ -4,6 +4,7 @@ from background.modules.redis import redis_client
 from functools import wraps
 import json
 import inspect
+import pandas as pd
         
 def cache_data(key_template="{class_name}|{class_attr}|{func_name}|{kwargs_repr}", ttl=1):
     """
@@ -45,11 +46,19 @@ def cache_data(key_template="{class_name}|{class_attr}|{func_name}|{kwargs_repr}
             cache_data = None
             try:
                 cache_data = redis_client.get(cache_key)
-                if cache_data: # HIT
-                    parsed_data = json.loads(cache_data)
-                    return parsed_data
-                
-                cache_data = func(*args, **kwargs) # MISS
+                # HIT
+                if cache_data is not None:
+                    payload = json.loads(cache_data)
+                    if payload["type"] == "df":
+                        cache_data = pd.read_json(payload["data"])
+                        return pd.read_json(payload["data"])
+
+                    else:
+                        cache_data = json.loads(payload["data"])
+                        return cache_data
+
+                # MISS
+                cache_data = func(*args, **kwargs) 
                 return cache_data
                 
             except Exception as e:
@@ -57,18 +66,43 @@ def cache_data(key_template="{class_name}|{class_attr}|{func_name}|{kwargs_repr}
                 raise e
             
             finally:
-                if cache_data:
-                    if isinstance(cache_data, (dict, list)):
-                        redis_client.setex(cache_key, ttl, json.dumps(cache_data).encode('utf-8'))
+                if isinstance(cache_data, pd.DataFrame): 
+                    if not cache_data.empty: 
+                        payload = {
+                            "type": "df",
+                            "data": cache_data.to_json()
+                        }
+                        redis_client.psetex(cache_key, int(ttl*1000), json.dumps(payload).encode('utf-8'))
 
-                    elif isinstance(cache_data, str):
-                        redis_client.setex(cache_key, ttl, cache_data.encode('utf-8'))
+                else:
+                    if cache_data:
+                        if isinstance(cache_data, (dict, list)):
+                            payload = {
+                                "type": "json",
+                                "data": json.dumps(cache_data).encode('utf-8')
+                            }
+                            redis_client.psetex(cache_key, int(ttl*1000), json.dumps(payload).encode('utf-8'))
 
-                    elif isinstance(cache_data, bytes):
-                        redis_client.setex(cache_key, ttl, cache_data)
+                        elif isinstance(cache_data, str):
+                            payload = {
+                                "type": "json",
+                                "data": cache_data.encode('utf-8')
+                            }
+                            redis_client.psetex(cache_key, int(ttl*1000), json.dumps(payload).encode('utf-8'))
 
-                    else:
-                        redis_client.setex(cache_key, ttl, str(cache_data).encode('utf-8'))
+                        elif isinstance(cache_data, bytes):
+                            payload = {
+                                "type": "json",
+                                "data": cache_data
+                            }
+                            redis_client.psetex(cache_key, int(ttl*1000), json.dumps(payload).encode('utf-8'))
+
+                        else:
+                            payload = {
+                                "type": "json",
+                                "data": cache_data
+                            }
+                            redis_client.psetex(cache_key, int(ttl*1000), json.dumps(payload).encode('utf-8'))
         
         return wrapper
     return decorator

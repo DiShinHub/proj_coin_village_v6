@@ -1,21 +1,10 @@
 from background.middlewares.service_handler import ServiceHandler
 from background.modules.exchange_upbit import ExChangeUpbit
-from background.modules.minio import MinioModule
 from background.modules.log import Log
 from background.modules.redis import r as redis_single
 
-from background.dao.eda_dao import EdaDao
-
-from sklearn.ensemble import RandomForestClassifier
-import shap
-
-import pandas as pd
-import numpy as np 
-import seaborn as sns
-import matplotlib.pyplot as plt
+from background.dao.research_result_dao import ResearchResultDao
 import os
-
-import datetime
 
 class CvResearchProd01Gen01(ServiceHandler):
     """
@@ -34,7 +23,7 @@ class CvResearchProd01Gen01(ServiceHandler):
             interval_options=None,
             schedule_options=None
         ):
-        super().__init__(interval_options, schedule_options)
+        ServiceHandler.__init__(self, schedule_options=schedule_options, interval_options=interval_options)
 
         self.log = Log(os.path.basename(__file__)).get_logger()
         self.seq = seq
@@ -42,9 +31,8 @@ class CvResearchProd01Gen01(ServiceHandler):
         
         self.redis = redis_single
         self.upbit = ExChangeUpbit()
-        self.minio = MinioModule()
 
-        self.eda_dao = EdaDao()
+        self.research_result_dao = ResearchResultDao()
 
         self.tickers = self.service_options.get("tickers")
         self.ticker = None
@@ -56,12 +44,11 @@ class CvResearchProd01Gen01(ServiceHandler):
                 
                 self.ticker = ticker
                 self.upbit.set_ticker(self.ticker)
-                self.paint_eda()
+                self.decide_regime()
 
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
     
-
     def decide_regime(self, anchor_interval="minute5"):
 
         anchor_interval = "minute5"
@@ -110,32 +97,53 @@ class CvResearchProd01Gen01(ServiceHandler):
         # -----------------
         if not micro_trend and not mid_trend and not macro_trend:
             regime = "DEAD_RANGE"
+            regime_score = 0
 
         elif squeeze and not mid_trend:
             regime = "BREAKOUT_SETUP"
+            regime_score = 1
+
+        elif mid_trend and macro_trend:
+            regime = "SUPER_STRONG_TREND"
+            regime_score = 6
+
+        elif macro_trend:
+            regime = "STRONG_TREND"
+            regime_score = 5
 
         elif mid_trend and volatility_expand and volume_expand:
             regime = "TREND_START"
+            regime_score = 4
 
-        elif macro_trend and mid_trend:
-            regime = "STRONG_TREND"
-
-        elif mid_trend:
+        elif mid_trend and not macro_trend:
             regime = "TREND"
+            regime_score = 3
 
         else:
             regime = "RANGE"
+            regime_score = 2
 
-        res = {
+        result_json = {
             "market_regime": regime,
+            "market_regime_score": regime_score,
             "interval_regimes": interval_regimes,
             "micro_trend": micro_trend,
             "mid_trend": mid_trend,
             "macro_trend": macro_trend
         }
 
-        print(res) 
-
+        params = {}
+        params["runnable_service_seq"] = self.seq
+        params["type"] = "upbit-regime"
+        params["exchange"] = "upbit"
+        params["ticker"] = self.ticker
+        params["tags"] = ["upbit", "technical"]
+        params["result_markerable"] = regime_score
+        params["result_json"] = result_json
+        params["result_txt"] = ""
+        params["reg_member_seq"] = 0
+        params["mod_member_seq"] = 0
+        self.research_result_dao.upsert(params)
 
     """
     """

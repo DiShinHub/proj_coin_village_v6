@@ -257,6 +257,10 @@ class ExChangeCalculator():
         self.df["macd"] = self.df["close"].ewm(span=12, adjust=False).mean() - self.df["close"].ewm(span=26, adjust=False).mean()
         self.df["macd_signal"] = self.df["macd"].ewm(span=9, adjust=False).mean()
         return self.df
+
+    def set_rsi_change(self):
+        self.df['rsi_change'] = self.df['rsi'].astype(float).diff()
+        return self.df
     
     def set_bollinger_partition(self):
         
@@ -361,10 +365,6 @@ class ExChangeCalculator():
     def set_momentum_5_20(self):
         self.df['momentum_5_20'] = self.df['close'].astype(float).pct_change(5) - \
                                    self.df['close'].astype(float).pct_change(20)
-        return self.df
-
-    def set_rsi_change(self):
-        self.df['rsi_change'] = self.df['rsi'].astype(float).diff()
         return self.df
         
     def set_volatility_10_30_ratio(self):

@@ -20,6 +20,7 @@ class ExChangeUpbit(ExChangeCalculator):
         self.upbit = config.set_upbit()
         self.ticker = None
         self.ticker_org = None
+        self.paper_trading = None
 
     def set_ticker(self, ticker):
         self.ticker = ticker
@@ -28,6 +29,9 @@ class ExChangeUpbit(ExChangeCalculator):
 
     def get_ticker(self):
         return self.ticker
+
+    def set_paper_trading(self, paper_trading:bool):
+        self.paper_trading = paper_trading
     
     """
     balance
@@ -53,6 +57,9 @@ class ExChangeUpbit(ExChangeCalculator):
         -------
         krw_balances : 원화
         """
+        if self.paper_trading == True:
+            krw_balance = 100000000
+            return krw_balance
         
         balances = self.upbit.get_balances()
 
@@ -121,7 +128,6 @@ class ExChangeUpbit(ExChangeCalculator):
     """
     trade 
     """
-    @cache_data(ttl=1)
     @try_again(num=4)
     def buy_coin(self, krw_order):
         """
@@ -135,11 +141,30 @@ class ExChangeUpbit(ExChangeCalculator):
         -------
         boolean
         """
-        
+
         fees = 0.0005
+        if self.paper_trading == True:
+            buy_result = {
+                'uuid': 'da2a722e-6179-4e05-aafe-2bc01b2f1a4a', 
+                'side': 'bid', 
+                'ord_type': 'price', 
+                'price': str(krw_order * (1-fees)), 
+                'state': 'wait', 
+                'market': self.ticker, 
+                'created_at': '', 
+                'reserved_fee': str(krw_order*fees), 
+                'remaining_fee': str(krw_order*fees), 
+                'paid_fee': '0', 
+                'locked': str(krw_order * (1-fees)), 
+                'prevented_locked': '0', 
+                'executed_volume': '0', 
+                'trades_count': 0
+            }
+            return buy_result
+        
         buy_result = self.upbit.buy_market_order(
             self.ticker, krw_order * (1-fees))
-        
+
         # 성공
         if "uuid" in buy_result:
             if "price" in buy_result:
@@ -148,9 +173,7 @@ class ExChangeUpbit(ExChangeCalculator):
 
         # 실패
         self.log.info(f"class : {self.__class__.__name__}, method : {inspect.currentframe().f_code.co_name}, error : {str(buy_result)}")
-        raise
 
-    @cache_data(ttl=1)
     @try_again(num=4)
     def sell_coin(self, krw_order="All", current_price=None):
         """
@@ -198,6 +221,7 @@ class ExChangeUpbit(ExChangeCalculator):
     """
     prices & charts
     """
+    @cache_data(ttl=0.1)
     @try_again(num=4)
     def get_ohlcv(self, interval="day", date=None, count=100):
         
