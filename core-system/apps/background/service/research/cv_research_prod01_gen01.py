@@ -66,7 +66,7 @@ class CvResearchProd01Gen01(ServiceHandler):
         # -----------------
         micro = ["minute1", "minute3", "minute5"]
         mid = ["minute10", "minute15", "minute30", "minute60"]
-        macro = ["minute240", "day"]
+        macro = ["minute240", "day", "week"]
 
         micro_score = sum(interval_regimes[i] == "TREND" for i in micro)
         mid_score = sum(interval_regimes[i] == "TREND" for i in mid)
@@ -74,7 +74,7 @@ class CvResearchProd01Gen01(ServiceHandler):
 
         micro_trend = micro_score >= 2
         mid_trend = mid_score >= 2
-        macro_trend = macro_score >= 1
+        macro_trend = macro_score >= 2
 
         # -----------------
         # anchor timeframe
@@ -158,7 +158,8 @@ class CvResearchProd01Gen01(ServiceHandler):
             "minute30",
             "minute60",
             "minute240",
-            "day"
+            "day",
+            "week"
         ]
 
         data = {}
