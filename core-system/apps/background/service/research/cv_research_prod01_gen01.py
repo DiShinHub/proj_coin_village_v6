@@ -64,16 +64,16 @@ class CvResearchProd01Gen01(ServiceHandler):
         # multi timeframe
         # -----------------
         micro = ["minute1", "minute3", "minute5"]
-        mid = ["minute10", "minute15", "minute30", "minute60"]
-        macro = ["minute240", "day", "week"]
+        mid = ["minute10", "minute15", "minute30"]
+        macro = ["minute60", "minute240", "day"]
 
         micro_score = sum(interval_regimes[i] == "TREND" for i in micro)
         mid_score = sum(interval_regimes[i] == "TREND" for i in mid)
         macro_score = sum(interval_regimes[i] == "TREND" for i in macro)
 
-        micro_trend = micro_score >= 4
-        mid_trend = mid_score >= 4
-        macro_trend = macro_score >= 4
+        micro_trend = micro_score >= 2
+        mid_trend = mid_score >= 2
+        macro_trend = macro_score >= 2
 
         # -----------------
         # anchor timeframe
@@ -239,8 +239,7 @@ class CvResearchProd01Gen01(ServiceHandler):
             "minute30",
             "minute60",
             "minute240",
-            "day",
-            "week"
+            "day"
         ]
 
         data = {}
@@ -276,9 +275,9 @@ class CvResearchProd01Gen01(ServiceHandler):
         persistence_score = sum([
             df["adx"].rolling(5).mean().iloc[-1] > 25,                                         # 지속성
             df["close"].rolling(5).mean().iloc[-1] > df["close"].rolling(20).mean().iloc[-1],  # 방향 유지
-            df["close"].rolling(20).mean().diff().rolling(5).mean().iloc[-1]                   # 추세의 질
+            (df["close"].rolling(20).mean().diff().rolling(5).mean().iloc[-1]) > 0             # 추세의 질
         ])
         
         trend_score = base_score + persistence_score  # max 6
 
-        return "TREND" if trend_score >= 2 else "RANGE"
+        return "TREND" if trend_score >= 4 else "RANGE"

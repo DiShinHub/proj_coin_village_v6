@@ -127,6 +127,9 @@ class CvAutoTradeProd02Gen02Core():
         self.pref_order_hurdle = f"night_owl2s_bundle_order_hurdle_{self.ticker}"        # 주문 허들 
         self.pref_order_last_dt = f"night_owl2s_bundle_order_last_dt_{self.ticker}"      # 마지막 주문 시간
 
+        self.pref_regime_score = f"night_owl2s_bundle_regime_score_{self.ticker}"  
+        self.pref_regime = f"night_owl2s_bundle_regime_{self.ticker}"        
+
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def run(self):
     
@@ -235,19 +238,57 @@ class CvAutoTradeProd02Gen02Core():
             ticker=self.ticker
         )
         if data_list:
-            crr = data_list[0]
-            prev = data_list[1]
+            res = data_list[0]
+
+            ### TEST START ###
+            # 이전 값 조회
+            self.regime_score = self.redis.hget_data(self.pref_regime_score, self.ticker)      
+            self.regime = self.redis.hget_data(self.pref_regime, self.ticker)         
             
-            self.regime_changes = data_list
-            
-            self.regime_score_prev = prev.get("result_markerable")
-            self.regime_prev = prev.get("result_json").get("market_regime")
-            
-            self.regime_score = crr.get("result_markerable")
-            self.regime = crr.get("result_json").get("market_regime")
-            
-            if self.regime_score_prev != self.regime_score :
-                self.redis.save_msg_on_Q(f"regime changes {self.regime_changes}")
+            if self.regime_score != res.get("result_markerable"):
+                
+                interval_keys = [
+                    "day", "week",
+                    "minute1", "minute3", "minute5",
+                    "minute10", "minute15", "minute30",
+                    "minute60", "minute240"
+                ]
+                base_keys = [
+                    "mid_trend",
+                    "macro_trend",
+                    "micro_trend",
+                    "market_regime",
+                    "market_regime_score"
+                ]
+                result_interval = {k: [] for k in interval_keys}
+                result_base = {k: [] for k in base_keys}
+                result_markerables = []
+                for data in data_list:
+
+                    r = data.get("result_json") or {}
+                    intervals = r.get("interval_regimes", {})
+
+                    # interval 채우기
+                    for k in interval_keys:
+                        result_interval[k].append(intervals.get(k))
+
+                    # base 채우기
+                    for k in base_keys:
+                        result_base[k].append(r.get(k))
+                        
+                    result_markerables.append(data.get("result_markerable"))
+
+                self.regime_changes = result_markerables
+
+                self.redis.save_msg_on_Q(f"regime_changes {self.regime_changes}")
+                self.redis.save_msg_on_Q(f"regime_changes_detail {result_interval}")
+                self.redis.save_msg_on_Q(f"regime_changes_detail {result_base}")
+
+            # 이후 값 교체
+            self.regime_score = res.get("result_markerable")
+            self.regime = res.get("result_json").get("market_regime")
+            self.redis.hupd_date(self.pref_regime_score, self.ticker, self.regime_score)     
+            self.redis.hupd_date(self.pref_regime, self.ticker, self.regime)     
             
     """
     BBBB MORNITORING
