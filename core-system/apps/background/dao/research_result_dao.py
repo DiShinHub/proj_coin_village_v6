@@ -81,6 +81,47 @@ class ResearchResultDao:
 
         return self.postgres.read_one(query) 
     
+    def gets(self, 
+            page_no: int = 1,
+            row_count: int = 10,
+            runnable_service_seq=None, 
+            type=None, 
+            exchange=None, 
+            ticker=None,
+        ):
+        
+        query = """
+            SELECT
+                seq,
+                runnable_service_seq,
+                type,
+                exchange,
+                ticker,
+                tags,
+                result_markerable,
+                result_json,
+                result_txt,
+                reg_dt
+            FROM research_result
+            WHERE 1=1
+        """
+        if runnable_service_seq:
+            query += f" AND runnable_service_seq = {runnable_service_seq}"
+
+        if exchange:
+            query += f" AND exchange = '{exchange}'"
+
+        if type:
+            query += f" AND type = '{type}'"
+
+        if ticker:
+            query += f" AND ticker = '{ticker}'"
+        
+        query += f" ORDER BY seq DESC"
+        query += f""" LIMIT {row_count} OFFSET {(page_no - 1) * row_count} """ 
+        
+        return self.postgres.read_all(query) 
+    
     def update(self, seq, params):
 
         set_clause = ""
@@ -123,3 +164,23 @@ class ResearchResultDao:
 
         else:
             self.insert(params)
+    
+    def insert_with_limit(self, params, limit=1000):
+
+        self.insert(params)
+
+        query = f"""
+            WITH old_rows AS (
+                SELECT seq
+                FROM research_result
+                WHERE runnable_service_seq = {params.get("runnable_service_seq")}
+                AND exchange = '{params.get("exchange")}'
+                AND ticker = '{params.get("ticker")}'
+                ORDER BY seq DESC
+                OFFSET {limit}
+            )
+            DELETE FROM research_result
+            WHERE seq IN (SELECT seq FROM old_rows);
+        """
+
+        return self.postgres.execute_query_with_commit(query)

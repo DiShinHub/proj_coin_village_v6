@@ -117,6 +117,7 @@ class CvAutoTradeProd02Gen02Core():
         self.order_last_dt = None             # 마지막 주문 시간
         self.regime = None
         self.regime_score = None
+        self.regime_changes = None
         
         # --- prefixes
         self.pref_bbbb_price = f"night_owl2s_bundle_bbbb_price_{self.ticker}"            # bbbb 가격 
@@ -125,9 +126,6 @@ class CvAutoTradeProd02Gen02Core():
         self.pref_order_amount = f"night_owl2s_bundle_order_amount_{self.ticker}"        # 주문량 
         self.pref_order_hurdle = f"night_owl2s_bundle_order_hurdle_{self.ticker}"        # 주문 허들 
         self.pref_order_last_dt = f"night_owl2s_bundle_order_last_dt_{self.ticker}"      # 마지막 주문 시간
-
-        self.pref_regime_score = f"night_owl2s_bundle_regime_score_{self.ticker}"  
-        self.pref_regime = f"night_owl2s_bundle_regime_{self.ticker}"        
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def run(self):
@@ -213,39 +211,44 @@ class CvAutoTradeProd02Gen02Core():
         self.upbit.set_bollinger_partition()
         self.upbit.set_rsi()
         self.upbit.set_rsi_change() 
+        self.upbit.set_volume_imbalance() 
+        
         self.upbit.set_obv() 
+        self.upbit.set_obv_ma_ratio_20() 
+        self.upbit.set_rolling_volatility() 
+        
         self.upbit.set_vwap() 
+        self.upbit.set_ichimoku_cloud_state() 
+        
         df = self.upbit.get_df()
 
         self.current_price = float(df["close"].iloc[-1])
         self.bollinger_state_crr = int(df["bollinger_partition"].iloc[-1])
         self.bollinger_state_prev = int(df["bollinger_partition"].iloc[-2])
         self.close_price_list = [float(c) for c in df["close"].iloc[-10:].tolist()]
-
-        res = self.research_result_dao.get(type="upbit-regime", ticker=self.ticker)
-        if res:
-
-            ### TEST START ###
-            self.regime_score = self.redis.hget_data(self.pref_regime_score, self.ticker)      
-            self.regime = self.redis.hget_data(self.pref_regime, self.ticker)         
+        
+        # TEST 
+        data_list = self.research_result_dao.gets(
+            page_no=1,
+            row_count=10,
+            type="upbit-regime", 
+            ticker=self.ticker
+        )
+        if data_list:
+            crr = data_list[0]
+            prev = data_list[1]
             
-            if self.regime_score != res.get("result_markerable"):
-                self.redis.save_msg_on_Q(f"before regime_score {self.regime_score}")
-                self.redis.save_msg_on_Q(f"befire regime {self.regime}")
-                self.regime_score = res.get("result_markerable")
-                self.regime = res.get("result_json").get("market_regime")
-                self.redis.save_msg_on_Q(f"after regime_score {self.regime_score}")
-                self.redis.save_msg_on_Q(f"after regime {self.regime}")
-
-            self.regime_score = res.get("result_markerable")
-            self.regime = res.get("result_json").get("market_regime")
-
-            self.redis.hupd_date(self.pref_regime_score, self.ticker, self.regime_score)     
-            self.redis.hupd_date(self.pref_regime, self.ticker, self.regime)     
-            ### TEST END ###                
+            self.regime_changes = data_list
             
-
-
+            self.regime_score_prev = prev.get("result_markerable")
+            self.regime_prev = prev.get("result_json").get("market_regime")
+            
+            self.regime_score = crr.get("result_markerable")
+            self.regime = crr.get("result_json").get("market_regime")
+            
+            if self.regime_score_prev != self.regime_score :
+                self.redis.save_msg_on_Q(f"regime changes {self.regime_changes}")
+            
     """
     BBBB MORNITORING
     """
@@ -321,9 +324,8 @@ class CvAutoTradeProd02Gen02Core():
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def post_bbbb(self):
 
-        self.redis.save_msg_on_Q(f"{self.regime}")
-        self.log.info(f"self.regime : {self.regime}")
-
+        self.redis.save_msg_on_Q(f"regime changes {self.regime_changes}")
+        self.log.info(f"self.regime_changes : {self.regime_changes}")
         self.log.info(f"df : ")
         df = self.upbit.get_df()
         for row in df.tail(10).to_dict(orient="records"):
