@@ -45,9 +45,6 @@ backup-postgres.bat
 # move file
 다른 PC, 혹은 서버에서 작업일 때 물리적으로 이관 필요
 
-# restore
-restore-postgres.bat backup\db_20260306_170500.sql
-
 # Directory Example
 _ascm
  ├ bat

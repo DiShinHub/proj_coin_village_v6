@@ -83,9 +83,7 @@ class CvResearchProd01Gen01(ServiceHandler):
 
         # 스퀴즈
         boll_mean = df["bollinger_width"].rolling(100).mean().iloc[-1]
-        squeeze = row["bollinger_width"] < boll_mean * 0.7                  # 단순형
-        # bw_percentile = df["bollinger_width"].rank(pct=True).iloc[-1]     # 시장 적응형
-        # squeeze = bw_percentile < 0.2
+        # squeeze = row["bollinger_width"] < boll_mean * 0.7 
         
         # 볼륨, 확장성, 변동성
         atr_expand = row["atr_ratio"] > row["atr_ratio_ma"]
@@ -93,21 +91,38 @@ class CvResearchProd01Gen01(ServiceHandler):
         volume_expand = row["volume"] > vol_mean * 1.5
         volatility_expand = atr_expand and row["bollinger_width"] > boll_mean
         
-        breakout_ready = (
-            squeeze and
-            row["atr_ratio"] > row["atr_ratio_ma"] and
+        # 파생
+        was_squeeze = (
+            df["bollinger_width"].rolling(5).min().iloc[-2]
+            < boll_mean * 0.7
+        )
+        was_expansion = (
+            row["bollinger_width"] > df["bollinger_width"].iloc[-2]
+        )
+        breakout_setup = (
+            was_squeeze and
+            was_expansion and
+            atr_expand and
+            volume_expand
+        )
+        pullback = (
+            row["close"] < df["close"].rolling(20).mean().iloc[-1]
+            and not atr_expand
+        )
+        re_accumulation = (
+            atr_expand and
             row["volume"] > vol_mean
         )
-
-        # -----------------
-        # market regime
-        # 테스팅 하면서 빠져 나가는 구간, 케이스가 있는지 봐야한다. 
-        # [여러 의미를 한 케이스에서 타게끔] 만드는 것이 아닌 최대한 [하나의 의미를 한 케이스에서 타게끔] 하여 모든 케이스를 가시화 것이 목적이다.
-        # 방향성 말고 추세를 보는 것이 목적이다.
-        # 매수기에선 하락 트렌드가 끝나는 지점에서 약매수를, 바닥 횡보 구간에서 약매집을, 추세 변환하여 올라가는 시점에 강매수를 하는 것을 목적으로 한다
-        # 매도기에선 상승 트렌드가 끝나는 지점에서 약매도를, 천장 횡보 구간에서 약분산을, 추세 변환하여 떨어지는 시점에 전량매도를 하는 것을 목적으로 한다
-        # 패턴 신뢰성과 역패턴 위험성을 장기간 봐야한다.
-        # -----------------
+        # early_breakout = (
+        #     row["atr_ratio"] > row["atr_ratio_ma"] and
+        #     row["bollinger_width"] > df["bollinger_width"].rolling(20).mean().iloc[-1] * 0.9
+        # )
+        # early_trend_restart = (
+        #     re_accumulation and
+        #     early_breakout
+        # )
+        
+        # switch
         if not micro_trend and not mid_trend and not macro_trend:
             regime = "DEAD_RANGE"
             regime_score = 0
@@ -121,20 +136,39 @@ class CvResearchProd01Gen01(ServiceHandler):
             regime_score = 2
 
         elif mid_trend and not macro_trend:
-            regime = "TREND"
+            regime = "WEEK_TREND"
             regime_score = 3
 
         elif mid_trend and macro_trend:
             regime = "STRONG_TREND"
-            regime_score = 6
-
-        elif not mid_trend and breakout_ready:
-            regime = "BREAKOUT_SETUP"
             regime_score = 5
 
         elif not mid_trend and macro_trend:
-            regime = "STILL_TREND"
-            regime_score = 4
+            
+            # # 트랜드 회귀
+            # if early_trend_restart:
+            #     regime = "TREND_RESTART"
+            #     regime_score = 4.9
+                
+            # 재 축적
+            if re_accumulation:
+                regime = "RE_ACCUMULATION"
+                regime_score = 4.7
+
+            # 쉬는 중
+            elif pullback:
+                regime = "PULLBACK"
+                regime_score = 4.3
+
+            # 하락 전환 
+            elif breakout_setup:
+                regime = "BREAKOUT_SETUP"
+                regime_score = 4.1
+            
+            # 기타 
+            else:
+                regime = "STILL_TREND"
+                regime_score = 4
 
         else:
             regime = "UNKNOWN"
