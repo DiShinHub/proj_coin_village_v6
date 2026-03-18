@@ -132,7 +132,7 @@ class CvResearchProd01Gen01(ServiceHandler):
             regime_score = 1
             
         elif mid_trend and volatility_expand and volume_expand:
-            regime = "TREND_START"
+            regime = "TREND_SETUP"
             regime_score = 2
 
         elif mid_trend and not macro_trend:
@@ -168,7 +168,7 @@ class CvResearchProd01Gen01(ServiceHandler):
             # 기타 
             else:
                 regime = "STILL_TREND"
-                regime_score = 4
+                regime_score = 4.5
 
         else:
             regime = "UNKNOWN"
