@@ -115,9 +115,10 @@ class CvAutoTradeProd02Gen02Core():
         self.order_amount = 0                 # 주문 비중
         self.order_hurdle = 0                 # 주문 허들
         self.order_last_dt = None             # 마지막 주문 시간
-        self.regime = None
         self.regime_score = None
         self.regime_changes = None
+        self.direction_score = None
+        self.interval_directions = None
         
         # --- prefixes
         self.pref_bbbb_price = f"night_owl2s_bundle_bbbb_price_{self.ticker}"            # bbbb 가격 
@@ -128,7 +129,7 @@ class CvAutoTradeProd02Gen02Core():
         self.pref_order_last_dt = f"night_owl2s_bundle_order_last_dt_{self.ticker}"      # 마지막 주문 시간
 
         self.pref_regime_score = f"night_owl2s_bundle_regime_score_{self.ticker}"  
-        self.pref_regime = f"night_owl2s_bundle_regime_{self.ticker}"        
+        self.pref_direction_score = f"night_owl2s_bundle_direction_score_{self.ticker}"  
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def run(self):
@@ -240,15 +241,14 @@ class CvAutoTradeProd02Gen02Core():
         if data_list:
             res = data_list[0]
 
-            ### TEST START ###
             # 이전 값 조회
             self.regime_score = self.redis.hget_data(self.pref_regime_score, self.ticker)      
-            self.regime = self.redis.hget_data(self.pref_regime, self.ticker)         
             
+            ### TEST START ###
             if self.regime_score != res.get("result_markerable"):
                 
                 interval_keys = [
-                    "day", "week",
+                    "day", 
                     "minute1", "minute3", "minute5",
                     "minute10", "minute15", "minute30",
                     "minute60", "minute240"
@@ -280,15 +280,36 @@ class CvAutoTradeProd02Gen02Core():
 
                 self.regime_changes = result_markerables
 
-                self.redis.save_msg_on_Q(f"regime_changes {self.regime_changes}")
-                self.redis.save_msg_on_Q(f"regime_changes_detail {result_interval}")
-                self.redis.save_msg_on_Q(f"regime_changes_detail {result_base}")
+                self.redis.save_msg_on_Q(f"regime_changes : {self.regime_changes}")
+                self.redis.save_msg_on_Q(f"result_interval : {result_interval}")
+                self.redis.save_msg_on_Q(f"result_base : {result_base}")
 
             # 이후 값 교체
             self.regime_score = res.get("result_markerable")
-            self.regime = res.get("result_json").get("market_regime")
             self.redis.hupd_date(self.pref_regime_score, self.ticker, self.regime_score)     
-            self.redis.hupd_date(self.pref_regime, self.ticker, self.regime)     
+
+        data_list = self.research_result_dao.gets(
+            page_no=1,
+            row_count=10,
+            type="upbit-direction", 
+            ticker=self.ticker
+        )
+        res = data_list[0]
+
+        # 이전 값 조회
+        self.direction_score = self.redis.hget_data(self.pref_direction_score, self.ticker)      
+        
+        ### TEST START ###
+        if self.direction_score != res.get("result_markerable"):
+            self.direction_score = res.get("result_markerable")
+            self.interval_directions = res.get("result_json").get("interval_directions")
+            self.redis.save_msg_on_Q(f"direction_score {self.direction_score}")
+            self.redis.save_msg_on_Q(f"interval_directions {self.interval_directions}")
+
+        # 이후 값 교체
+        self.direction_score = res.get("result_markerable")
+        self.interval_directions = res.get("result_json").get("interval_directions")
+        self.redis.hupd_date(self.pref_direction_score, self.ticker, self.direction_score)     
             
     """
     BBBB MORNITORING
@@ -365,14 +386,14 @@ class CvAutoTradeProd02Gen02Core():
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def post_bbbb(self):
 
-        self.redis.save_msg_on_Q(f"regime changes {self.regime_changes}")
-        self.log.info(f"self.regime_changes : {self.regime_changes}")
-        self.log.info(f"df : ")
-        df = self.upbit.get_df()
-        for row in df.tail(10).to_dict(orient="records"):
-            for k, v in row.items():
-                self.log.info(f"{k}: {v}")
-            self.log.info("-" * 40)
+        # self.redis.save_msg_on_Q(f"regime changes {self.regime_changes}")
+        # self.log.info(f"self.regime_changes : {self.regime_changes}")
+        # self.log.info(f"df : ")
+        # df = self.upbit.get_df()
+        # for row in df.tail(10).to_dict(orient="records"):
+        #     for k, v in row.items():
+        #         self.log.info(f"{k}: {v}")
+        #     self.log.info("-" * 40)
 
         # 매매 진행
         order_dt = str(generate_now_date())
