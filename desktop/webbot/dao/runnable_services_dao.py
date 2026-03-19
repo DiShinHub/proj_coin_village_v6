@@ -28,7 +28,7 @@ class runnableServicesDao():
                 schedule_options
             FROM
                 runnable_services
-            WHERE execution_class = 'CvResearchProd02Gen01'
+            WHERE execution_class = 'CvVisualizerProd02Gen01'
         """
         return self.postgres.read_one(query) 
     

@@ -25,7 +25,7 @@ def stop_rotate_urls():
     if proc_cv_research_prod02_gen01:
         
         #proc_cv_research_prod02_gen01.terminate()
-        os.killpg(proc_cv_research_prod02_gen01.pid, signal.SIGTERM)
+        os.kill(proc_cv_research_prod02_gen01.pid, signal.SIGTERM)
         proc_cv_research_prod02_gen01 = None
         
     return "stopped"

@@ -7,7 +7,7 @@ from background.dao.research_result_dao import ResearchResultDao
 import os
 import datetime
 
-class CvResearchProd03Gen01(ServiceHandler):
+class CvResearchProd04Gen01(ServiceHandler):
     """
     Service Name : CvResearchProd04Gen01
     Generation : 01 

@@ -8,7 +8,7 @@ import os
 
 class CvResearchProd02Gen01(ServiceHandler):
     """
-    Service Name : CvResearchProd01Gen01
+    Service Name : CvResearchProd02Gen01
     Generation : 01 
     
     Desc : 

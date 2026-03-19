@@ -82,37 +82,37 @@ class CvResearchProd01Gen01(ServiceHandler):
         row = df.iloc[-1]
 
         # 스퀴즈
-        boll_mean = df["bollinger_width"].rolling(100).mean().iloc[-1]
         # squeeze = row["bollinger_width"] < boll_mean * 0.7 
         
         # 볼륨, 확장성, 변동성
+        boll_mean = df["bollinger_width"].rolling(100).mean().iloc[-1]
         atr_expand = row["atr_ratio"] > row["atr_ratio_ma"]
         vol_mean = df["volume"].rolling(20).mean().iloc[-1]
         volume_expand = row["volume"] > vol_mean * 1.5
         volatility_expand = atr_expand and row["bollinger_width"] > boll_mean
         
         # 파생
-        was_squeeze = (
-            df["bollinger_width"].rolling(5).min().iloc[-2]
-            < boll_mean * 0.7
-        )
-        was_expansion = (
-            row["bollinger_width"] > df["bollinger_width"].iloc[-2]
-        )
-        breakout_setup = (
-            was_squeeze and
-            was_expansion and
-            atr_expand and
-            volume_expand
-        )
-        pullback = (
-            row["close"] < df["close"].rolling(20).mean().iloc[-1]
-            and not atr_expand
-        )
-        re_accumulation = (
+        re_activate = (
             atr_expand and
             row["volume"] > vol_mean
         )
+        # pullback = (
+        #     row["close"] < df["close"].rolling(20).mean().iloc[-1]
+        #     and not atr_expand
+        # )
+        # was_squeeze = (
+        #     df["bollinger_width"].rolling(5).min().iloc[-2]
+        #     < boll_mean * 0.7
+        # )
+        # was_expansion = (
+        #     row["bollinger_width"] > df["bollinger_width"].iloc[-2]
+        # )
+        # breakout_setup = (
+        #     was_squeeze and
+        #     was_expansion and
+        #     atr_expand and
+        #     volume_expand
+        # )
         # early_breakout = (
         #     row["atr_ratio"] > row["atr_ratio_ma"] and
         #     row["bollinger_width"] > df["bollinger_width"].rolling(20).mean().iloc[-1] * 0.9
@@ -151,19 +151,19 @@ class CvResearchProd01Gen01(ServiceHandler):
             #     regime_score = 4.9
                 
             # 재 축적
-            if re_accumulation:
-                regime = "RE_ACCUMULATION"
+            if re_activate:
+                regime = "RE_ACTIVATE"
                 regime_score = 4.7
 
-            # 쉬는 중
-            elif pullback:
-                regime = "PULLBACK"
-                regime_score = 4.3
+            # # 쉬는 중
+            # elif pullback:
+            #     regime = "PULLBACK"
+            #     regime_score = 4.3
 
-            # 하락 전환 
-            elif breakout_setup:
-                regime = "BREAKOUT_SETUP"
-                regime_score = 4.1
+            # # 하락 전환 
+            # elif breakout_setup:
+            #     regime = "BREAKOUT_SETUP"
+            #     regime_score = 4.1
             
             # 기타 
             else:
