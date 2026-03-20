@@ -257,9 +257,8 @@ class CvAutoTradeProd02Gen02Core():
                     "mid_trend",
                     "macro_trend",
                     "micro_trend",
-                    "market_regime",
-                    "market_regime_score"
                 ]
+                
                 result_interval = {k: [] for k in interval_keys}
                 result_base = {k: [] for k in base_keys}
                 result_markerables = []
@@ -281,8 +280,12 @@ class CvAutoTradeProd02Gen02Core():
                 self.regime_changes = result_markerables
 
                 self.redis.save_msg_on_Q(f"regime_changes : {self.regime_changes}")
-                self.redis.save_msg_on_Q(f"result_interval : {result_interval}")
-                self.redis.save_msg_on_Q(f"result_base : {result_base}")
+                
+                for key, val in result_interval.items():
+                    self.redis.save_msg_on_Q(f"Trend each of {key} : {val}")
+                
+                for key, val in result_base.items():
+                    self.redis.save_msg_on_Q(f"Trend group of {key} : {val}")
 
             # 이후 값 교체
             self.regime_score = res.get("result_markerable")
