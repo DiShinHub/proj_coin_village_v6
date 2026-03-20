@@ -307,7 +307,10 @@ class CvAutoTradeProd02Gen02Core():
             self.direction_score = res.get("result_markerable")
             self.interval_directions = res.get("result_json").get("interval_directions")
             self.redis.save_msg_on_Q(f"direction_score {self.direction_score}")
-            self.redis.save_msg_on_Q(f"interval_directions {self.interval_directions}")
+            #self.redis.save_msg_on_Q(f"interval_directions {self.interval_directions}")
+            
+            for key, val in self.interval_directions.items():
+                self.redis.save_msg_on_Q(f"Direction each of {key} : {val}")
 
         # 이후 값 교체
         self.direction_score = res.get("result_markerable")
