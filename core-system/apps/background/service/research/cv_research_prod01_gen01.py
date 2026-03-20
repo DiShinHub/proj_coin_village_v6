@@ -88,18 +88,18 @@ class CvResearchProd01Gen01(ServiceHandler):
         boll_mean = df["bollinger_width"].rolling(100).mean().iloc[-1]
         atr_expand = row["atr_ratio"] > row["atr_ratio_ma"]
         vol_mean = df["volume"].rolling(20).mean().iloc[-1]
-        volume_expand = row["volume"] > vol_mean * 1.5
-        volatility_expand = atr_expand and row["bollinger_width"] > boll_mean
+        # volume_expand = row["volume"] > vol_mean * 1.5
+        # volatility_expand = atr_expand and row["bollinger_width"] > boll_mean
         
         # 파생
         re_activate = (
             atr_expand and
             row["volume"] > vol_mean
         )
-        # pullback = (
-        #     row["close"] < df["close"].rolling(20).mean().iloc[-1]
-        #     and not atr_expand
-        # )
+        pullback = (
+            row["close"] < df["close"].rolling(20).mean().iloc[-1]
+            and not atr_expand
+        )
         # was_squeeze = (
         #     df["bollinger_width"].rolling(5).min().iloc[-2]
         #     < boll_mean * 0.7
@@ -131,17 +131,17 @@ class CvResearchProd01Gen01(ServiceHandler):
             regime = "RANGE"
             regime_score = 1
             
-        elif mid_trend and volatility_expand and volume_expand:
-            regime = "TREND_SETUP"
-            regime_score = 2
+        # elif mid_trend and volatility_expand and volume_expand:
+        #     regime = "TREND_SETUP"
+        #     regime_score = 2
 
         elif mid_trend and not macro_trend:
             regime = "WEEK_TREND"
-            regime_score = 3
+            regime_score = 2
 
         elif mid_trend and macro_trend:
             regime = "STRONG_TREND"
-            regime_score = 5
+            regime_score = 4
 
         elif not mid_trend and macro_trend:
             
@@ -153,12 +153,12 @@ class CvResearchProd01Gen01(ServiceHandler):
             # 재 축적
             if re_activate:
                 regime = "RE_ACTIVATE"
-                regime_score = 4.7
+                regime_score = 3.7
 
-            # # 쉬는 중
-            # elif pullback:
-            #     regime = "PULLBACK"
-            #     regime_score = 4.3
+            # 쉬는 중
+            elif pullback:
+                regime = "PULLBACK"
+                regime_score = 3.3
 
             # # 하락 전환 
             # elif breakout_setup:
@@ -168,7 +168,7 @@ class CvResearchProd01Gen01(ServiceHandler):
             # 기타 
             else:
                 regime = "STILL_TREND"
-                regime_score = 4.5
+                regime_score = 3.5
 
         else:
             regime = "UNKNOWN"
@@ -290,7 +290,7 @@ class CvResearchProd01Gen01(ServiceHandler):
 
         return data
         
-    def calc_interval_regime(self, df):
+    def calc_interval_regime(self, df, interval):
 
         row = df.iloc[-1]
 
@@ -312,6 +312,13 @@ class CvResearchProd01Gen01(ServiceHandler):
             (df["close"].rolling(20).mean().diff().rolling(5).mean().iloc[-1]) > 0             # 추세의 질
         ])
         
-        trend_score = base_score + persistence_score  # max 6
+        # interval별 기준
+        if interval in ["minute1", "minute3", "minute5"]:
+            threshhold = 3
+            
+        else:
+            threshhold = 4
+            
+        is_trend = (base_score + persistence_score >= threshhold)
 
-        return "TREND" if trend_score >= 4 else "RANGE"
+        return "TREND" if is_trend else "RANGE"

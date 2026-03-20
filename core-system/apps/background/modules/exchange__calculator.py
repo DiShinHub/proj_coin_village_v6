@@ -374,6 +374,15 @@ class ExChangeCalculator():
         return self.df
     
     def set_atr(self, period=14):
+        """
+        ATR = 가격이 ‘얼마나 크게 움직이느냐’
+        
+        ATR 값이 크다
+        → 변동성 큼, 시장이 격렬
+        
+        ATR 값이 작다
+        → 변동성 작음
+        """
 
         high = self.df['high'].astype(float)
         low = self.df['low'].astype(float)
@@ -393,6 +402,10 @@ class ExChangeCalculator():
         return self.df
 
     def set_atr_ratio(self):
+        """
+        atr_ratio = ATR / ATR 평균
+        → atr_ratio_ma는 표준화된 ATR(변동성 비율)을 이동평균으로 부드럽게 만듬
+        """
         if "atr" not in self.df.columns:
             self.set_atr()
             
@@ -407,7 +420,16 @@ class ExChangeCalculator():
         return self.df
 
     def set_adx(self, period=14):
-
+        """
+        추세가 강한지 / 약한지
+        
+        0 ~ 20	추세 없음 (횡보)
+        20 ~ 25	약한 추세
+        25 ~ 40	강한 추세
+        40 ~ 60	매우 강한 추세
+        60+	과열 추세
+        """
+        
         self.df["prev_close"] = self.df["close"].shift(1)
         self.df["prev_high"] = self.df["high"].shift(1)
         self.df["prev_low"] = self.df["low"].shift(1)
