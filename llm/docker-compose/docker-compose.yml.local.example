@@ -1,0 +1,64 @@
+
+services:
+
+  fastapi-app:
+    container_name: ${FASTAPI_APP_NAME}-compose
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
+    ports:
+      - "${FASTAPI_APP_HOST_PORT}:${FASTAPI_APP_PORT}"
+    volumes:
+      - ../app:/apps/app
+      - ../poetry.lock:/apps/poetry.lock
+      - ../pyproject.toml:/apps/pyproject.toml
+      - ./volumes/logs/${FASTAPI_APP_NAME}:/apps/logs/${FASTAPI_APP_NAME}
+    environment:
+      - TZ=${FASTAPI_TIMEZONE}
+      - APP_PORT=${FASTAPI_APP_PORT}
+      - APP_ACTIVE_ENV=${FASTAPI_APP_ACTIVE_ENV}
+      - APP_LOG_LOCATION=/apps/logs/${FASTAPI_APP_NAME}
+
+  fastapi-task-worker:
+    container_name: ${FASTAPI_APP_NAME}-task-worker-compose
+    build:
+      context: ../
+      dockerfile: ./docker/DockerfileTaskWorker
+    ports:
+      - "${FASTAPI_TASK_WORKER_PORT}:${FASTAPI_TASK_WORKER_PORT}"
+    volumes:
+      - ./volumes/logs/${FASTAPI_TASK_WORKER_NAME}:/apps/logs/${FASTAPI_TASK_WORKER_NAME}
+      - ../task_worker:/apps/task_worker
+      - ../poetry.lock:/apps/poetry.lock
+      - ../pyproject.toml:/apps/pyproject.toml
+      - ../credentials.json:/apps/credentials.json
+      - ../token.json:/apps/token.json
+    environment:
+      - TZ=${FASTAPI_TIMEZONE}
+      - APP_PORT=${FASTAPI_TASK_WORKER_PORT}
+      - APP_LOG_LOCATION=/apps/logs/${FASTAPI_TASK_WORKER_NAME}
+
+    depends_on:
+      - fastapi-app
+
+  fastapi-app-db-postgres:
+    container_name: ${FASTAPI_APP_NAME}-db-postgres-compose
+    image: postgres:14.6-alpine
+    ports:
+      - "${POSTGRES_HOST_PORT}:5432"
+    volumes:
+      - ./volumes/data/db-postgres:/var/lib/postgresql/data
+    command: ["postgres", "-c", "log_statement=all"]
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TZ=${POSTGRES_TIMEZONE}
+    restart: unless-stopped
+
+  fastapi-app-db-redis:
+    container_name: ${FASTAPI_APP_NAME}-redis-compose
+    image: redis:5.0.7
+    ports:
+      - "${REDIS_PORT}:6379"
+    command: ["redis-server"]
+    restart: unless-stopped

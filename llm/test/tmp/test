@@ -1,0 +1,97 @@
+{
+    "disable_existing_loggers": false,
+    "formatters": {
+        "access_formatter": {
+            "()": "testtttt",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+            "format": "%(levelprefix)s %(asctime)s.%(msecs)03d - [%(filename)s:%(lineno)d]: %(client_addr)s - \"%(request_line)s\" %(status_code)s",
+            "use_colors": true
+        },
+        "default_formatter": {
+            "()": "uvicorn.logging.DefaultFormatter",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+            "format": "%(levelprefix)s %(asctime)s.%(msecs)03d - [%(filename)s:%(lineno)d]: %(message)s",
+            "use_colors": true
+        },
+        "file_formatter": {
+            "()": "uvicorn.logging.DefaultFormatter",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+            "format": "%(levelprefix)s %(asctime)s.%(msecs)03d - [%(filename)s:%(lineno)d]: %(message)s",
+            "use_colors": false
+        }
+    },
+    "handlers": {
+        "access_handler": {
+            "class": "logging.StreamHandler",
+            "formatter": "access_formatter",
+            "level": "INFO",
+            "stream": "ext://sys.stdout"
+        },
+        "default_handler": {
+            "class": "logging.StreamHandler",
+            "formatter": "default_formatter",
+            "level": "DEBUG",
+            "stream": "ext://sys.stdout"
+        },
+        "file_handler": {
+            "backupCount": 30,
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": "logs/app.log",
+            "formatter": "file_formatter",
+            "interval": 1,
+            "when": "D"
+        }
+    },
+    "loggers": {
+        "app": {
+            "handlers": [
+                "file_handler",
+                "default_handler"
+            ],
+            "level": "DEBUG",
+            "propagate": false
+        },
+        "root": {
+            "level": "DEBUG"
+        },
+        "sqlalchemy.dialects": {
+            "handlers": [
+                "file_handler"
+            ],
+            "level": "DEBUG",
+            "propagate": false
+        },
+        "sqlalchemy.engine": {
+            "handlers": [
+                "file_handler",
+                "default_handler"
+            ],
+            "level": "DEBUG",
+            "propagate": false
+        },
+        "sqlalchemy.orm": {
+            "handlers": [
+                "file_handler"
+            ],
+            "level": "DEBUG",
+            "propagate": false
+        },
+        "sqlalchemy.pool": {
+            "handlers": [
+                "file_handler",
+                "default_handler"
+            ],
+            "level": "DEBUG",
+            "propagate": false
+        },
+        "uvicorn": {
+            "handlers": [
+                "file_handler",
+                "default_handler"
+            ],
+            "level": "DEBUG",
+            "propagate": false
+        }
+    },
+    "version": 1
+}

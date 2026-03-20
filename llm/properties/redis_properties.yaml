@@ -1,0 +1,26 @@
+common:
+  redis:
+    host: 183.111.204.170
+    port: 43502
+    db: 0
+
+# development
+dev:
+  redis:
+    host: 183.111.204.170
+    port: 43502
+    db: 0
+
+# staging
+stg:
+  redis:
+    host: 183.111.204.170
+    port: 43502
+    db: 0
+
+# production
+prd:
+  redis:
+    host: 183.111.204.170
+    port: 43502
+    db: 0
