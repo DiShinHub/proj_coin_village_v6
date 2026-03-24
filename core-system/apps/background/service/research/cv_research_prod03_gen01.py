@@ -4,6 +4,8 @@ from background.modules.log import Log
 from background.modules.redis import r as redis_single
 
 from background.dao.research_result_dao import ResearchResultDao
+from collections import defaultdict
+import json
 import numpy as np
 import datetime
 import os
@@ -118,7 +120,7 @@ class CvResearchProd03Gen01(ServiceHandler):
         grouped_result = self.group_box_zone(box_zone_total)
 
         result_json = grouped_result
-        result_markerable = grouped_result[anchor_days][anchor_interval]
+        result_markerable = ""
 
         params = {}
         params["runnable_service_seq"] = self.seq
@@ -154,17 +156,22 @@ class CvResearchProd03Gen01(ServiceHandler):
            
     def group_box_zone(self, box_zone_total):
         grouped_result = {}
-    
+
         for days, intervals in box_zone_total.items():
             grouped_result[days] = {}
-    
+
             for interval, records in intervals.items():
-                temp_dict = defaultdict(list)
-    
+                temp_dict = {}  # 그냥 dict 사용
+
                 # regi_line별로 datetime을 모으기
                 for rec in records:
-                    temp_dict[rec['regi_line']].append(rec['datetime'])
-    
+                    rl = rec['regi_line']
+                    dt = rec['datetime']
+
+                    if rl not in temp_dict:
+                        temp_dict[rl] = []
+                    temp_dict[rl].append(dt)
+
                 # count 포함해서 최종 리스트 생성
                 grouped_list = []
                 for regi_line, datetimes in temp_dict.items():
@@ -173,7 +180,7 @@ class CvResearchProd03Gen01(ServiceHandler):
                         "datetimes": datetimes,
                         "count": len(datetimes)
                     })
-    
+
                 grouped_result[days][interval] = grouped_list
     
         return grouped_result

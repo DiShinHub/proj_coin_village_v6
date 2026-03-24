@@ -30,7 +30,7 @@ class ExChangeUpbit(ExChangeCalculator):
     def get_ticker(self):
         return self.ticker
 
-    def set_paper_trading(self, paper_trading:bool):
+    def set_paper_trading(self, paper_trading:bool=False):
         self.paper_trading = paper_trading
     
     """

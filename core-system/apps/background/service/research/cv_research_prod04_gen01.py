@@ -90,32 +90,54 @@ class CvResearchProd04Gen01(ServiceHandler):
                     if col not in df.columns:
                         self.log.info(f"[{self.ticker}] missing column: {col}")
                         return
-    
-                # 3. 시간대별 집계
-                volume_by_hour = df.groupby("hour")["volume"].mean()
-                imbalance_by_hour = df.groupby("hour")["volume_imbalance"].mean()
-    
-                # volume_by_weekday = df.groupby("weekday")["volume"].mean()
-                # imbalance_by_weekday = df.groupby("weekday")["volume_imbalance"].mean()
-    
-                # 4. HOT TIME 추출
-                top_volume_hours = volume_by_hour.sort_values(ascending=False).head(5).index.tolist()
-                bot_volume_hours = volume_by_hour.sort_values(ascending=True).head(5).index.tolist()
-    
+                    
+                grouped = df.groupby(["weekday", "hour"]).agg({
+                    "volume": "mean",
+                    "volume_imbalance": "mean"
+                }).reset_index()
+
+                # 거래량 기준 HOT / COLD
+                top_volume_slots = self.extract_slots(
+                    grouped.sort_values("volume", ascending=False).head(5)
+                )
+
+                bot_volume_slots = self.extract_slots(
+                    grouped.sort_values("volume", ascending=True).head(5)
+                )
+
                 # 방향성
-                best_long_hours = imbalance_by_hour.sort_values(ascending=False).head(5).index.tolist()
-                best_short_hours = imbalance_by_hour.sort_values(ascending=True).head(5).index.tolist()
+                best_long_slots = self.extract_slots(
+                    grouped.sort_values("volume_imbalance", ascending=False).head(5)
+                )
+
+                best_short_slots = self.extract_slots(
+                    grouped.sort_values("volume_imbalance", ascending=True).head(5)
+                )
+    
+                # # 3. 시간대별 집계
+                # volume_by_hour = df.groupby("hour")["volume"].mean()
+                # imbalance_by_hour = df.groupby("hour")["volume_imbalance"].mean()
+    
+                # # volume_by_weekday = df.groupby("weekday")["volume"].mean()
+                # # imbalance_by_weekday = df.groupby("weekday")["volume_imbalance"].mean()
+    
+                # # 4. HOT TIME 추출
+                # top_volume_hours = volume_by_hour.sort_values(ascending=False).head(5).index.tolist()
+                # bot_volume_hours = volume_by_hour.sort_values(ascending=True).head(5).index.tolist()
+    
+                # # 방향성
+                # best_long_hours = imbalance_by_hour.sort_values(ascending=False).head(5).index.tolist()
+                # best_short_hours = imbalance_by_hour.sort_values(ascending=True).head(5).index.tolist()
 
                 hot_cold_total[str(days)] = {
-                    "top_volume_hours" : top_volume_hours,
-                    "bot_volume_hours" : bot_volume_hours,
-                    "best_long_hours" : best_long_hours,
-                    "best_short_hours" : best_short_hours,
-                    
+                    "top_volume_slots" : top_volume_slots,
+                    "bot_volume_slots" : bot_volume_slots,
+                    "best_long_slots" : best_long_slots,
+                    "best_short_slots" : best_short_slots,
                 }
         
             result_json = hot_cold_total
-            result_markerable = str(hot_cold_total[anchor_days]["best_long_hours"])
+            result_markerable = str(hot_cold_total[anchor_days]["best_long_slots"])
 
             params = {}
             params["runnable_service_seq"] = self.seq
@@ -133,3 +155,9 @@ class CvResearchProd04Gen01(ServiceHandler):
 
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
+
+    def extract_slots(self, df):
+        return ",".join(
+            f"{int(row['weekday'])}-{int(row['hour'])}"
+            for _, row in df.iterrows()
+        )
