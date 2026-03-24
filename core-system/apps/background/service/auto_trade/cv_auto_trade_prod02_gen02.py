@@ -115,7 +115,7 @@ class CvAutoTradeProd02Gen02Core():
         self.order_amount = 0                 # 주문 비중
         self.order_hurdle = 0                 # 주문 허들
         self.order_last_dt = None             # 마지막 주문 시간
-        self.regime_score = None
+        self.regime = None
         self.regime_changes = None
         self.direction_score = None
         self.interval_directions = None
@@ -128,7 +128,7 @@ class CvAutoTradeProd02Gen02Core():
         self.pref_order_hurdle = f"night_owl2s_bundle_order_hurdle_{self.ticker}"        # 주문 허들 
         self.pref_order_last_dt = f"night_owl2s_bundle_order_last_dt_{self.ticker}"      # 마지막 주문 시간
 
-        self.pref_regime_score = f"night_owl2s_bundle_regime_score_{self.ticker}"  
+        self.pref_regime = f"night_owl2s_bundle_regime_{self.ticker}"  
         self.pref_direction_score = f"night_owl2s_bundle_direction_score_{self.ticker}"  
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
@@ -242,10 +242,10 @@ class CvAutoTradeProd02Gen02Core():
             res = data_list[0]
 
             # 이전 값 조회
-            self.regime_score = self.redis.hget_data(self.pref_regime_score, self.ticker)      
+            self.regime = self.redis.hget_data(self.pref_regime, self.ticker)      
             
             ### TEST START ###
-            if self.regime_score != res.get("result_markerable"):
+            if self.regime != res.get("result_markerable"):
                 
                 interval_keys = [
                     "day", 
@@ -288,8 +288,8 @@ class CvAutoTradeProd02Gen02Core():
                     self.redis.save_msg_on_Q(f"Trend group of {key} : {val}")
 
             # 이후 값 교체
-            self.regime_score = res.get("result_markerable")
-            self.redis.hupd_date(self.pref_regime_score, self.ticker, self.regime_score)     
+            self.regime = res.get("result_markerable")
+            self.redis.hupd_date(self.pref_regime, self.ticker, self.regime)     
 
         data_list = self.research_result_dao.gets(
             page_no=1,

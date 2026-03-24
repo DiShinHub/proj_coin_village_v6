@@ -5,6 +5,7 @@ from background.modules.redis import r as redis_single
 
 from background.dao.research_result_dao import ResearchResultDao
 import numpy as np
+import datetime
 import os
 
 class CvResearchProd03Gen01(ServiceHandler):
@@ -37,6 +38,14 @@ class CvResearchProd03Gen01(ServiceHandler):
 
         self.tickers = self.service_options.get("tickers")
         self.ticker = None
+        
+        self.target_days_list = [
+            # 31,
+            # 62,
+            # 93,
+            #186,
+            365
+        ]
     
     def main(self):
 
@@ -45,225 +54,126 @@ class CvResearchProd03Gen01(ServiceHandler):
                 
                 self.ticker = ticker
                 self.upbit.set_ticker(self.ticker)
-                self.resistance_zone()
+                self.decide_box_zone()
 
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
     
-    def resistance_zone(self, anchor_interval="minute15"):
-        """
-        INSIDE_BOX        : 박스 내부
-        AT_SUPPORT        : 지지 근처
-        AT_RESISTANCE     : 저항 근처
+    def decide_box_zone(self, anchor_days="365", anchor_interval="day"):
 
-        BREAKOUT_UP       : 위로 돌파
-        BREAKOUT_DOWN     : 아래로 이탈
-
-        FAKE_BREAKOUT_UP  : 위로 뚫었다가 다시 들어옴
-        FAKE_BREAKOUT_DOWN: 아래로 뚫었다가 다시 들어옴
-
-        NEW_BOX_UP        : 박스 상단 위에서 새 박스 형성
-        NEW_BOX_DOWN      : 박스 하단 아래에서 새 박스 형성
-        """
-
-        df = self.fetch_ohlcv(anchor_interval)
-
-        # 최근 구간만 사용 (중요)
-        df = df.tail(200)
-
-        supports, resistances = self.extract_support_resistance(df)
-
-        current_price = df["close"].iloc[-1]
-
-        # -----------------
-        # 가장 가까운 박스 찾기
-        # -----------------
-        nearest_support = max([s for s in supports if s <= current_price], default=None)
-        nearest_resistance = min([r for r in resistances if r >= current_price], default=None)
-
-        # 박스 폭
-        box_range = None
-        if nearest_support and nearest_resistance:
-            box_range = (nearest_resistance - nearest_support) / current_price
-
-        # 상태 판단
-        if nearest_support and nearest_resistance:
-            if box_range < 0.03:
-                zone_type = "TIGHT_RANGE"
-            elif box_range < 0.08:
-                zone_type = "RANGE"
-            else:
-                zone_type = "WIDE_RANGE"
-        else:
-            zone_type = "NO_BOX"
+        box_zone_total = {}
+        for days in self.target_days_list:
+            data = self.fetch_all_ohlcv(days)
             
-        state = self.detect_box_state(df, nearest_support, nearest_resistance)
-        new_box_state = self.detect_new_box(df, nearest_support, nearest_resistance)
+            box_zone_interval = {}
+            for interval, df in data.items():
+            
+                # 1. 데이터
+                closes = df['close'].values
+            
+                # 2. 가격 구간화 (binning)
+                bins = 50  # resolution
+                hist, bin_edges = np.histogram(closes, bins=bins)
+            
+                # 3. 밀집 구간 찾기
+                density = hist / hist.sum()
+            
+                # 상위 밀집 구간 선택
+                threshold = np.percentile(density, 50)
+            
+                high_density_idx = np.where(density >= threshold)[0]
+            
+                if len(high_density_idx) == 0:
+                    return None
+            
+                # 4. 연속된 구간 찾기 (cluster)
+                clusters = []
+                current_cluster = [high_density_idx[0]]
+            
+                for i in range(1, len(high_density_idx)):
+                    if high_density_idx[i] == high_density_idx[i-1] + 1:
+                        current_cluster.append(high_density_idx[i])
+                    else:
+                        clusters.append(current_cluster)
+                        current_cluster = [high_density_idx[i]]
+            
+                clusters.append(current_cluster)
+                
+                result = []
+                tolerance = (bin_edges[1] - bin_edges[0]) * 0.2
+                for cluster in clusters:
+                    regi_line = bin_edges[cluster]
 
-        final_state = new_box_state if new_box_state else state
-        
-        result_json = {
-            "support_levels": supports,
-            "resistance_levels": resistances,
-            "nearest_support": nearest_support,
-            "nearest_resistance": nearest_resistance,
-            "current_price": current_price,
-            "box_range": box_range,
-            "zone_type": zone_type,
-            "box_state": final_state
-        }
+                    for price in regi_line:
+                        matched_df = df[np.abs(df['close'] - price) <= tolerance]
+                        for idx, row in matched_df.iterrows():
+                            result.append({
+                                "regi_line": float(price),
+                                "datetime": row['datetime'].strftime('%Y-%m-%d %H:%M:%S')
+                            })
+                            
+                box_zone_interval[interval] = result
+            box_zone_total[str(days)] = box_zone_interval
+            
+        grouped_result = self.group_box_zone(box_zone_total)
+
+        result_json = grouped_result
+        result_markerable = grouped_result[anchor_days][anchor_interval]
 
         params = {}
         params["runnable_service_seq"] = self.seq
-        params["type"] = "upbit-sr-zone"
+        params["type"] = "upbit-box"
         params["exchange"] = "upbit"
         params["ticker"] = self.ticker
-        params["tags"] = ["upbit", "support_resistance"]
-        params["result_markerable"] = box_range if box_range else 0
+        params["tags"] = ["upbit", "box"]
+        params["result_markerable"] = result_markerable
         params["result_json"] = result_json
         params["result_txt"] = ""
         params["reg_member_seq"] = 0
         params["mod_member_seq"] = 0
 
         self.research_result_dao.insert_with_limit(params, 10000)
-        
-    def fetch_ohlcv(self, interval):
+                                    
+    def fetch_all_ohlcv(self, days=30):
 
-        self.upbit.set_ohlcv(interval=interval, count=300)
-        return self.upbit.get_df().copy()
+        count = 200
+        base_intervals = [
+            "day"
+            #, "week"
+        ]
+        data = {}
+        for interval in base_intervals:
+                
+            end_dt = datetime.datetime.now()
+            start_dt = end_dt - datetime.timedelta(days=days)
+            
+            df = self.upbit.set_ohlcvs(interval, days, count, start_dt, end_dt)
+            data[interval] = df
+
+        return data
+           
+    def group_box_zone(self, box_zone_total):
+        grouped_result = {}
     
-    def extract_support_resistance(self, df):
-
-        swing_highs, swing_lows = self.find_swings(df)
-
-        resistance = self.filter_levels(swing_highs, df)
-        support = self.filter_levels(swing_lows, df)
-
-        resistance = self.cluster_levels(resistance)
-        support = self.cluster_levels(support)
-
-        return support, resistance
+        for days, intervals in box_zone_total.items():
+            grouped_result[days] = {}
     
-    def find_swings(self, df, window=5):
-
-        highs = df["high"].values
-        lows = df["low"].values
-
-        swing_highs = []
-        swing_lows = []
-
-        for i in range(window, len(df) - window):
-            if highs[i] == max(highs[i-window:i+window]):
-                swing_highs.append(highs[i])
-
-            if lows[i] == min(lows[i-window:i+window]):
-                swing_lows.append(lows[i])
-
-        return swing_highs, swing_lows
+            for interval, records in intervals.items():
+                temp_dict = defaultdict(list)
     
-    def filter_levels(self, levels, df, tolerance=0.003):
-
-        filtered = []
-        close = df["close"]
-        volume = df["volume"]
-
-        for level in levels:
-            touches = abs(close - level) / level < tolerance
-
-            if touches.sum() >= 3:
-                avg_vol = volume[touches].mean()
-                if avg_vol > volume.mean():
-                    filtered.append(level)
-
-        return filtered
+                # regi_line별로 datetime을 모으기
+                for rec in records:
+                    temp_dict[rec['regi_line']].append(rec['datetime'])
     
-    def cluster_levels(self, levels, threshold=0.005):
-
-        if not levels:
-            return []
-
-        levels = sorted(levels)
-        clusters = [[levels[0]]]
-
-        for lvl in levels[1:]:
-            if abs(lvl - clusters[-1][-1]) / lvl < threshold:
-                clusters[-1].append(lvl)
-            else:
-                clusters.append([lvl])
-
-        return [float(np.mean(c)) for c in clusters]
+                # count 포함해서 최종 리스트 생성
+                grouped_list = []
+                for regi_line, datetimes in temp_dict.items():
+                    grouped_list.append({
+                        "regi_line": regi_line,
+                        "datetimes": datetimes,
+                        "count": len(datetimes)
+                    })
     
-    def detect_box_state(self, df, support, resistance):
-
-        if not support or not resistance:
-            return "NO_BOX"
-
-        price = df["close"].iloc[-1]
-        prev_price = df["close"].iloc[-2]
-
-        box_height = resistance - support
-        tolerance = box_height * 0.1  # 10% 범위
-
-        # -----------------
-        # 위치 판단
-        # -----------------
-        inside = support < price < resistance
-        near_support = abs(price - support) < tolerance
-        near_resistance = abs(price - resistance) < tolerance
-
-        # -----------------
-        # 돌파 / 이탈
-        # -----------------
-        breakout_up = price > resistance and prev_price <= resistance
-        breakout_down = price < support and prev_price >= support
-
-        # -----------------
-        # 페이크
-        # -----------------
-        fake_up = prev_price > resistance and price < resistance
-        fake_down = prev_price < support and price > support
-
-        # -----------------
-        # 상태 결정
-        # -----------------
-        if breakout_up:
-            return "BREAKOUT_UP"
-
-        elif breakout_down:
-            return "BREAKOUT_DOWN"
-
-        elif fake_up:
-            return "FAKE_BREAKOUT_UP"
-
-        elif fake_down:
-            return "FAKE_BREAKOUT_DOWN"
-
-        elif near_support:
-            return "AT_SUPPORT"
-
-        elif near_resistance:
-            return "AT_RESISTANCE"
-
-        elif inside:
-            return "INSIDE_BOX"
-
-        elif price > resistance:
-            return "ABOVE_BOX"
-
-        elif price < support:
-            return "BELOW_BOX"
-
-        return "UNKNOWN"
+                grouped_result[days][interval] = grouped_list
     
-    def detect_new_box(self, df, support, resistance):
-
-        # 최근 n개 캔들이 기존 박스 밖에서 유지되는지
-        recent = df["close"].tail(10)
-
-        if all(recent > resistance):
-            return "NEW_BOX_UP"
-
-        elif all(recent < support):
-            return "NEW_BOX_DOWN"
-
-        return None
+        return grouped_result

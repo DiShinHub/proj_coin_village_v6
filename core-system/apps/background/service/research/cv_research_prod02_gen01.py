@@ -57,51 +57,8 @@ class CvResearchProd02Gen01(ServiceHandler):
         for interval, df in data.items():
             interval_directions[interval] = self.calc_interval_direction(df)
 
-        # -----------------
-        # multi timeframe
-        # -----------------
-        micro = ["minute1", "minute3", "minute5"]
-        mid = ["minute10", "minute15", "minute30"]
-        macro = ["minute60", "minute240", "day"]
-
-        def score_group(group):
-            long_score = sum(interval_directions[i] == "LONG" for i in group)
-            short_score = sum(interval_directions[i] == "SHORT" for i in group)
-            return long_score, short_score
-
-        micro_long, micro_short = score_group(micro)
-        mid_long, mid_short = score_group(mid)
-        macro_long, macro_short = score_group(macro)
-
-        # -----------------
-        # 최종 방향성 결정
-        # -----------------
-        long_total = micro_long + mid_long * 2 + macro_long * 3
-        short_total = micro_short + mid_short * 2 + macro_short * 3
-
-        if long_total - short_total >= 3:
-            direction = "LONG"
-            direction_score = long_total
-
-        elif short_total - long_total >= 3:
-            direction = "SHORT"
-            direction_score = short_total * -1
-
-        else:
-            direction = "NEUTRAL"
-            direction_score = 0
-
-        result_json = {
-            "market_direction": direction,
-            "direction_score": direction_score,
-            "interval_directions": interval_directions,
-            "micro_long": micro_long,
-            "mid_long": mid_long,
-            "macro_long": macro_long,
-            "micro_short": micro_short,
-            "mid_short": mid_short,
-            "macro_short": macro_short
-        }
+        result_json = interval_directions
+        result_markerable = interval_directions[anchor_interval]
 
         params = {}
         params["runnable_service_seq"] = self.seq
@@ -109,7 +66,7 @@ class CvResearchProd02Gen01(ServiceHandler):
         params["exchange"] = "upbit"
         params["ticker"] = self.ticker
         params["tags"] = ["upbit", "direction"]
-        params["result_markerable"] = direction_score
+        params["result_markerable"] = result_markerable
         params["result_json"] = result_json
         params["result_txt"] = ""
         params["reg_member_seq"] = 0
