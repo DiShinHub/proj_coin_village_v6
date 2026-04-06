@@ -230,92 +230,6 @@ class CvAutoTradeProd02Gen02Core():
         self.bollinger_state_crr = int(df["bollinger_partition"].iloc[-1])
         self.bollinger_state_prev = int(df["bollinger_partition"].iloc[-2])
         self.close_price_list = [float(c) for c in df["close"].iloc[-10:].tolist()]
-        
-        # TEST 
-        data_list = self.research_result_dao.gets(
-            page_no=1,
-            row_count=10,
-            type="upbit-regime", 
-            ticker=self.ticker
-        )
-        if data_list:
-            res = data_list[0]
-
-            # 이전 값 조회
-            self.regime = self.redis.hget_data(self.pref_regime, self.ticker)      
-            
-            ### TEST START ###
-            if self.regime != res.get("result_markerable"):
-                
-                interval_keys = [
-                    "day", 
-                    "minute1", "minute3", "minute5",
-                    "minute10", "minute15", "minute30",
-                    "minute60", "minute240"
-                ]
-                base_keys = [
-                    "mid_trend",
-                    "macro_trend",
-                    "micro_trend",
-                ]
-                
-                result_interval = {k: [] for k in interval_keys}
-                result_base = {k: [] for k in base_keys}
-                result_markerables = []
-                for data in data_list:
-
-                    r = data.get("result_json") or {}
-                    intervals = r.get("interval_regimes", {})
-
-                    # interval 채우기
-                    for k in interval_keys:
-                        result_interval[k].append(intervals.get(k))
-
-                    # base 채우기
-                    for k in base_keys:
-                        result_base[k].append(r.get(k))
-                        
-                    result_markerables.append(data.get("result_markerable"))
-
-                self.regime_changes = result_markerables
-
-                self.redis.save_msg_on_Q(f"regime_changes : {self.regime_changes}")
-                
-                for key, val in result_interval.items():
-                    self.redis.save_msg_on_Q(f"Trend each of {key} : {val}")
-                
-                for key, val in result_base.items():
-                    self.redis.save_msg_on_Q(f"Trend group of {key} : {val}")
-
-            # 이후 값 교체
-            self.regime = res.get("result_markerable")
-            self.redis.hupd_date(self.pref_regime, self.ticker, self.regime)     
-
-        data_list = self.research_result_dao.gets(
-            page_no=1,
-            row_count=10,
-            type="upbit-direction", 
-            ticker=self.ticker
-        )
-        res = data_list[0]
-
-        # 이전 값 조회
-        self.direction_score = self.redis.hget_data(self.pref_direction_score, self.ticker)      
-        
-        ### TEST START ###
-        if self.direction_score != res.get("result_markerable"):
-            self.direction_score = res.get("result_markerable")
-            self.interval_directions = res.get("result_json").get("interval_directions")
-            self.redis.save_msg_on_Q(f"direction_score {self.direction_score}")
-            #self.redis.save_msg_on_Q(f"interval_directions {self.interval_directions}")
-            
-            for key, val in self.interval_directions.items():
-                self.redis.save_msg_on_Q(f"Direction each of {key} : {val}")
-
-        # 이후 값 교체
-        self.direction_score = res.get("result_markerable")
-        self.interval_directions = res.get("result_json").get("interval_directions")
-        self.redis.hupd_date(self.pref_direction_score, self.ticker, self.direction_score)     
             
     """
     BBBB MORNITORING
@@ -387,8 +301,8 @@ class CvAutoTradeProd02Gen02Core():
         elif self.bollinger_state_crr in ([6]) and\
             self.bollinger_state_prev in ([5, 6]):
             self.reset_bbbb(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였습니다. 모니터링을 중단합니다.")
+       
     
-
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def post_bbbb(self):
 
@@ -427,10 +341,35 @@ class CvAutoTradeProd02Gen02Core():
 
             # 매매 기록 및 강도 올림
             if self.redis.hget_data(self.pref_bbbb_price, self.ticker):
-                self.redis.hupd_date(self.pref_bbbb_status, self.ticker, "off_bbbb")                  
+                self.redis.hupd_date(self.pref_bbbb_status, self.ticker, "after_bbbb")                  
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
+             
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
+    def after_bbbb(self):   
+        
+        # 상승형/하락형 산세인지 확인 (bbbb 때의 최저가와 v 반등 구간의 가격 비교)
+        # 하락형 산세면 손절 
+        # 최저가 밑으로 돌파하면 손절 (2개 티커 확인)
+        
+        # 손절 
+        # 하락형 산세면
+        # 레짐 유지
+        # 방향성 유지
+                
+        # 추매 
+        # 상승형 산세면 
+        # 레짐 전환 시 
+        # 방향성 전환 시
+        
+        # 거래량
+        # rsi 확인
+        # apv
+        # obv 확인 
+        # 구름 돌파, 기울기 
+        pass
+    
 
     """
     BBBB reset
