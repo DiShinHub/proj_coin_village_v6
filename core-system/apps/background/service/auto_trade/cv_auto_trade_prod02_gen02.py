@@ -188,7 +188,6 @@ class CvAutoTradeProd02Gen02Core():
     
         self.bbbb_price = self.redis.hget_data(self.pref_bbbb_price, self.ticker)                   # bbbb 가격
         self.bbbb_status = self.redis.hget_data(self.pref_bbbb_status, self.ticker)                 # bbbb 상태
-        self.bollinger_state_prev = self.redis.hget_data(self.pref_bollinger_state, self.ticker)    # 이전 볼린저 상태
         self.order_amount = self.redis.hget_data(self.pref_order_amount, self.ticker)               # 주문량
         self.order_hurdle = self.redis.hget_data(self.pref_order_hurdle, self.ticker)               # 주문 허들
         self.order_last_dt = self.redis.hget_data(self.pref_order_last_dt, self.ticker)             # 마지막 주문 시간
@@ -196,8 +195,10 @@ class CvAutoTradeProd02Gen02Core():
         if self.bbbb_price: self.bbbb_price = float(self.bbbb_price)
         else: self.bbbb_price = 0
         
-        if self.bollinger_state_prev: self.bollinger_state_prev = int(self.bollinger_state_prev)
-        else: self.bollinger_state_prev = 0
+        
+        # self.bollinger_state_prev = self.redis.hget_data(self.pref_bollinger_state, self.ticker)    # 이전 볼린저 상태
+        # if self.bollinger_state_prev: self.bollinger_state_prev = int(self.bollinger_state_prev)
+        # else: self.bollinger_state_prev = 0
 
         if self.order_amount: self.order_amount = float(self.order_amount)
         else: self.order_amount = 0
