@@ -121,15 +121,16 @@ class CvAutoTradeProd02Gen02Core():
         self.interval_directions = None
         
         # --- prefixes
-        self.pref_bbbb_price = f"night_owl2s_bundle_bbbb_price_{self.ticker}"            # bbbb 가격 
-        self.pref_bbbb_status = f"night_owl2s_bundle_bbbb_status_{self.ticker}"          # bbbb 상태 
-        self.pref_bollinger_state = f"night_owl2s_bundle_bollinger_state_{self.ticker}"  # 볼린저 상태 
-        self.pref_order_amount = f"night_owl2s_bundle_order_amount_{self.ticker}"        # 주문량 
-        self.pref_order_hurdle = f"night_owl2s_bundle_order_hurdle_{self.ticker}"        # 주문 허들 
-        self.pref_order_last_dt = f"night_owl2s_bundle_order_last_dt_{self.ticker}"      # 마지막 주문 시간
+        self.pref_servce = self.__class__.__name__
+        self.pref_bbbb_price = f"{self.pref_servce}_{self.ticker}_bbbb_price"            # bbbb 가격 
+        self.pref_bbbb_status = f"{self.pref_servce}_{self.ticker}_bbbb_status"          # bbbb 상태 
+        self.pref_bollinger_state = f"{self.pref_servce}_{self.ticker}_bollinger_state"  # 볼린저 상태 
+        self.pref_order_amount = f"{self.pref_servce}_{self.ticker}_order_amount"        # 주문량 
+        self.pref_order_hurdle = f"{self.pref_servce}_{self.ticker}_order_hurdle"        # 주문 허들 
+        self.pref_order_last_dt = f"{self.pref_servce}_{self.ticker}_order_last_dt"      # 마지막 주문 시간
 
-        self.pref_regime = f"night_owl2s_bundle_regime_{self.ticker}"  
-        self.pref_direction_score = f"night_owl2s_bundle_direction_score_{self.ticker}"  
+        self.pref_regime = f"{self.pref_servce}_{self.ticker}_regime"  
+        self.pref_direction_score = f"{self.pref_servce}_{self.ticker}_direction_score"  
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def run(self):
@@ -306,15 +307,6 @@ class CvAutoTradeProd02Gen02Core():
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def post_bbbb(self):
 
-        # self.redis.save_msg_on_Q(f"regime changes {self.regime_changes}")
-        # self.log.info(f"self.regime_changes : {self.regime_changes}")
-        # self.log.info(f"df : ")
-        # df = self.upbit.get_df()
-        # for row in df.tail(10).to_dict(orient="records"):
-        #     for k, v in row.items():
-        #         self.log.info(f"{k}: {v}")
-        #     self.log.info("-" * 40)
-
         # 매매 진행
         order_dt = str(generate_now_date())
         buy_result = self.upbit.buy_coin(self.order_amount)
@@ -368,9 +360,78 @@ class CvAutoTradeProd02Gen02Core():
         # apv
         # obv 확인 
         # 구름 돌파, 기울기 
-        pass
-    
+        
+        # 
+        self.pref_after_low = f"{self.pref_servce}_{self.ticker}_after_low"
+        self.pref_rebound_high = f"{self.pref_servce}_{self.ticker}_rebound_high"
+        self.pref_pullback_low = f"{self.pref_servce}_{self.ticker}_pullback_low"
+        
+        #
+        after_low = self.redis.hget_data(self.pref_after_low, self.ticker)
 
+        if after_low:
+            after_low = float(after_low)
+            if self.current_price < after_low:
+                after_low = self.current_price
+                self.redis.hupd_date(self.pref_after_low, self.ticker, after_low)
+                
+        else:
+            after_low = self.current_price
+            self.redis.hupd_date(self.pref_after_low, self.ticker, after_low)
+        
+        #
+        stop_price = after_low * 0.995  # buffer 0.5%
+        prev_close = self.close_price_list[-2]
+        if prev_close < stop_price:
+            self.reset_bbbb(f"{self.slack_post_prefix} : {self.ticker} 손절 발생 (after_low 이탈)")
+            return
+            
+        rebound_high = self.redis.hget_data(self.pref_rebound_high, self.ticker)
+        if self.current_price > after_low * 1.002:  # 0.2% 이상 반등
+            if not rebound_high:
+                rebound_high = float(self.current_price)
+                self.redis.hupd_date(self.pref_rebound_high, self.ticker, rebound_high)
+                
+            else:
+                rebound_high = float(rebound_high)
+                if self.current_price > rebound_high:
+                    rebound_high = float(self.current_price)
+                    self.redis.hupd_date(self.pref_rebound_high, self.ticker, rebound_high)
+            
+        #
+        # rebound_high = self.redis.hget_data(self.pref_rebound_high, self.ticker)
+        if rebound_high:
+            rebound_high = float(rebound_high)
+
+            # 고점 대비 하락 시작
+            if self.current_price < rebound_high:
+                pullback_low = self.redis.hget_data(self.pref_pullback_low, self.ticker)
+
+                if not pullback_low:
+                    self.redis.hupd_date(self.pref_pullback_low, self.ticker, self.current_price)
+                else:
+                    pullback_low = float(pullback_low)
+                    if self.current_price < pullback_low:
+                        self.redis.hupd_date(self.pref_pullback_low, self.ticker, self.current_price)
+                        
+        pullback_low = self.redis.hget_data(self.pref_pullback_low, self.ticker)      
+        if pullback_low:
+            pullback_low = float(pullback_low)
+
+            # ✅ 구조 유지 (Higher Low)
+            if pullback_low > after_low:
+
+                # 반등 재시작 확인
+                c1 = self.close_price_list[-3]
+                c2 = self.close_price_list[-2]
+                c3 = self.close_price_list[-1]
+
+                rebound_again = (c3 > c2 and c2 < c1)
+
+                # if rebound_again:
+                #     self.execute_add_buy()
+        
+        # 
     """
     BBBB reset
     """
