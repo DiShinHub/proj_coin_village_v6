@@ -115,6 +115,8 @@ class CvAutoTradeProd02Gen02Core():
         self.order_amount = 0                 # 주문 비중
         self.order_hurdle = 0                 # 주문 허들
         self.order_last_dt = None             # 마지막 주문 시간
+
+        self.pivot_state = None
         
         # --- prefixes
         self.pref_servce = self.__class__.__name__
@@ -125,6 +127,10 @@ class CvAutoTradeProd02Gen02Core():
         self.pref_order_last_dt = f"{self.pref_servce}_{self.ticker}_order_last_dt"      # 마지막 주문 시간
         self.pref_lowest_price_after_bbbb = f"{self.pref_servce}_{self.ticker}_lowest_price_after_bbbb"
         
+        self.pref_pivot_state = f"{self.pref_servce}_{self.ticker}_pivot_state"
+        self.pref_pivot_low_price = f"{self.pref_servce}_{self.ticker}_pivot_high_price"
+        self.pref_pivot_high_price = f"{self.pref_servce}_{self.ticker}_pivot_high_price"
+
         self.set_order_option()
         
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
@@ -133,19 +139,17 @@ class CvAutoTradeProd02Gen02Core():
         self.mode = self.redis.hget_data(self.pref_mode, self.ticker) 
     
         try:
-            self.after_bbbb()
-            
-            # if self.mode == "off_bbbb":
-            #     self.off_bbbb()
+            if self.mode == "off_bbbb":
+                self.off_bbbb()
                 
-            # elif self.mode == "on_bbbb":
-            #     self.on_bbbb()
+            elif self.mode == "on_bbbb":
+                self.on_bbbb()
                 
-            # elif self.mode == "after_bbbb":
-            #     self.after_bbbb()
+            elif self.mode == "after_bbbb":
+                self.after_bbbb()
                 
-            # else:
-            #     self.off_bbbb()
+            else:
+                self.off_bbbb()
         
         except Exception as e:
             self.log.info(f"{str(e)}")
@@ -203,18 +207,22 @@ class CvAutoTradeProd02Gen02Core():
         
         # 하락세 감지, 모니터링 돌입
         if self.bollinger_state_crr == 1 and self.bollinger_state_prev == 1:
-            
-            # bbbb의 가격을 현재가로 잡고 bbbb 상태 변경
-            self.redis.hupd_date(self.pref_bbbb_price, self.ticker, self.current_price) 
-            self.redis.hupd_date(self.pref_mode, self.ticker, "on_bbbb")
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 하단 무너짐이 감시 되었습니다. 모니터링을 시작합니다.")
+            self.pre_on_bbbb()
+            return
             
         # CASE 2: 매수 없이 상승세 감지      
         elif self.bollinger_state_crr in ([6]) and\
             self.bollinger_state_prev in ([5, 6]) and\
             datetime.timedelta(hours=self.order_reset_hours_if_stable) < (datetime.datetime.now()- self.order_last_dt):
-            
             self.reset_order(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
+
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_on_bbbb(self):
+            
+        # bbbb의 가격을 현재가로 잡고 bbbb 상태 변경
+        self.redis.hupd_date(self.pref_bbbb_price, self.ticker, self.current_price) 
+        self.redis.hupd_date(self.pref_mode, self.ticker, "on_bbbb")
+        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 하단 무너짐이 감시 되었습니다. 모니터링을 시작합니다.")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def on_bbbb(self):
@@ -276,43 +284,49 @@ class CvAutoTradeProd02Gen02Core():
             
             # CASE 1-3 : 정상 케이스, 매수
             else:
-                # 매매 진행
-                order_dt = str(generate_now_date())
-                buy_result = self.upbit.buy_coin(self.order_amount)
-                if buy_result:
-                    params = {
-                        "exchange": "upbit",
-                        "ticker": self.ticker,
-                        "uuid": buy_result.get("uuid"),
-                        "ord_side": buy_result.get("side"),
-                        "ord_type": buy_result.get("ord_type"),
-                        "price": buy_result.get("price"),
-                        "reserved_fee": buy_result.get("reserved_fee"),
-                        "remaining_fee": buy_result.get("remaining_fee"),
-                        "paid_fee": buy_result.get("paid_fee"),
-                        "state": buy_result.get("state"),
-                        "locked": buy_result.get("locked"),
-                        "executed_volume": buy_result.get("executed_volume"),
-                        "runnable_service_seq": self.seq
-                    }
-                    self.trade_result_dao.insert(params)
-
-                    # 메세지 포스트
-                    self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
-
-                    # 매매 기록 및 강도 올림
-                    if self.redis.hget_data(self.pref_bbbb_price, self.ticker):
-                        self.redis.hupd_date(self.pref_mode, self.ticker, "after_bbbb")                  
-                        self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
-                        self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
-                        self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
+                self.pre_after_bbbb()
+                return
     
         # CASE 2: 매수 없이 상승세 감지      
         elif self.bollinger_state_crr in ([6]) and\
             self.bollinger_state_prev in ([5, 6]):
             self.reset_bbbb(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였습니다. 모니터링을 중단합니다.")
-            
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
+
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_after_bbbb(self):
+
+        # 매매 진행
+        order_dt = str(generate_now_date())
+        buy_result = self.upbit.buy_coin(self.order_amount)
+        if buy_result:
+            params = {
+                "exchange": "upbit",
+                "ticker": self.ticker,
+                "uuid": buy_result.get("uuid"),
+                "ord_side": buy_result.get("side"),
+                "ord_type": buy_result.get("ord_type"),
+                "price": buy_result.get("price"),
+                "reserved_fee": buy_result.get("reserved_fee"),
+                "remaining_fee": buy_result.get("remaining_fee"),
+                "paid_fee": buy_result.get("paid_fee"),
+                "state": buy_result.get("state"),
+                "locked": buy_result.get("locked"),
+                "executed_volume": buy_result.get("executed_volume"),
+                "runnable_service_seq": self.seq
+            }
+            self.trade_result_dao.insert(params)
+
+            # 메세지 포스트
+            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+
+            # 매매 기록 및 강도 올림
+            if self.redis.hget_data(self.pref_bbbb_price, self.ticker):
+                self.redis.hupd_date(self.pref_mode, self.ticker, "after_bbbb")                  
+                self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
+                self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
+                self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
+
+    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def after_bbbb(self):
         
         # 전처리 
@@ -330,47 +344,37 @@ class CvAutoTradeProd02Gen02Core():
             if self.current_price < lowest_price_after_bbbb:
                 lowest_price_after_bbbb = self.current_price
                 self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, lowest_price_after_bbbb)
-                self.log.info(f"lowest_price_after_bbbb : {1}")
                 
         else:
             lowest_price_after_bbbb = self.current_price
             self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, lowest_price_after_bbbb)
-            self.log.info(f"lowest_price_after_bbbb : {2}")
-        
-        self.log.info(f"lowest_price_after_bbbb : {lowest_price_after_bbbb}")
-        
-        # 하락 → 반등(1차) → 재하락(눌림) → 반등(2차 시작) ← 여기 잡기
-        def is_pivot_low(c, i, left=2, right=2):
-            return all(c[i] < c[i-j] for j in range(1, left+1)) and \
-                all(c[i] < c[i+j] for j in range(1, right+1))
+
+        def is_pivot_high():
+            c1 = self.close_price_list[-3]
+            c2 = self.close_price_list[-2]
+            if c1 < c2:
+                self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_high")
                 
-        def is_pivot_high(c, i, left=2, right=2):
-            return all(c[i] > c[i-j] for j in range(1, left+1)) and \
-                all(c[i] > c[i+j] for j in range(1, right+1))
-        
-        c = self.close_price_list
-        pivots = []
-        for i in range(2, len(c)-2):
-            if is_pivot_low(c, i):
-                self.log.info(f"is_pivot_low : here")
-                pivots.append(("low", i, c[i]))
-                
-            elif is_pivot_high(c, i):
-                self.log.info(f"is_pivot_high : here")
-                pivots.append(("high", i, c[i]))
-                
-        self.log.info(f"pivots : {pivots}")
-                
-        lows = [p for p in pivots if p[0] == "low"]
-        self.log.info(f"lows : {lows}")
-        if len(lows) >= 2:
-            low1 = lows[-2]
-            low2 = lows[-1]
-            
-            self.log.info(f"low1 : {low1}")
-            self.log.info(f"low2 : {low2}")
+        def is_pivot_low():
+            c1 = self.close_price_list[-3]
+            c2 = self.close_price_list[-2]
+            if c1 > c2:
+                self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_low")
+
+        self.pivot_state = self.redis.hget_data(self.pref_pivot_state, self.ticker) 
+        self.log.info(f"self.pivot_state : {self.pivot_state}")
+
+        if self.pivot_state == None:
+            is_pivot_high()
+
+        elif self.pivot_state == "pivot_high":
+            is_pivot_low()
+
+        elif self.pivot_state == "pivot_low":
+            is_pivot_low()
+            self.log.info(f"current_price : {self.current_price}")
             self.log.info(f"lowest_price_after_bbbb : {lowest_price_after_bbbb}")
-            
+
             # 저점 갱신형이면 손절
             # 저점 위에서 버티면 다음 단계로 
 
