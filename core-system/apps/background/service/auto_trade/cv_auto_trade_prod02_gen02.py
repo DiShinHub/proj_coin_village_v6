@@ -365,6 +365,7 @@ class CvAutoTradeProd02Gen02Core():
                 if c1 > c3:
                     self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_low")
 
+        # 너무 노이즈가 심하다. 볼밴 탈출이랑, 좀 쉽게 안잡히게 변경해보자
         self.pivot_state = self.redis.hget_data(self.pref_pivot_state, self.ticker) 
         self.log.info(f"self.pivot_state : {self.pivot_state}")
 
