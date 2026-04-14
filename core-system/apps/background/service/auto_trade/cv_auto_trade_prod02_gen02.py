@@ -352,14 +352,18 @@ class CvAutoTradeProd02Gen02Core():
         def is_pivot_high():
             c1 = self.close_price_list[-3]
             c2 = self.close_price_list[-2]
+            c3 = self.close_price_list[-1]
             if c1 < c2:
-                self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_high")
+                if c1 < c3:
+                    self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_high")
                 
         def is_pivot_low():
             c1 = self.close_price_list[-3]
             c2 = self.close_price_list[-2]
+            c3 = self.close_price_list[-1]
             if c1 > c2:
-                self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_low")
+                if c1 > c3:
+                    self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_low")
 
         self.pivot_state = self.redis.hget_data(self.pref_pivot_state, self.ticker) 
         self.log.info(f"self.pivot_state : {self.pivot_state}")
@@ -387,6 +391,7 @@ class CvAutoTradeProd02Gen02Core():
             
         # if self.close_price_list[-2] < self.close_price_list[-1]:
             # self.redis.hupd_date(self.pref_mode, self.ticker, "on_mt")   
+
             
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def on_mt(self):   
