@@ -356,6 +356,9 @@ class CvAutoTradeProd02Gen02Core():
             if c1 < c2:
                 if c1 < c3:
                     self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_high")
+                    return True
+
+            return False
                 
         def is_pivot_low():
             c1 = self.close_price_list[-3]
@@ -364,6 +367,25 @@ class CvAutoTradeProd02Gen02Core():
             if c1 > c2:
                 if c1 > c3:
                     self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_low")
+                    return True
+
+            return False
+
+        # lowest_price_after_bbbb가 왜케 높게 잡혔지 종가 기준이라 그런가 확인만 
+        """
+        2026-04-15 00:32:35,031 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
+        2026-04-15 00:32:35,031 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3468000.0
+        2026-04-15 00:32:35,032 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
+        2026-04-15 00:32:35,356 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
+        2026-04-15 00:32:35,357 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3468000.0
+        2026-04-15 00:32:35,357 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
+        2026-04-15 00:32:35,694 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
+        2026-04-15 00:32:35,695 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3468000.0
+        2026-04-15 00:32:35,696 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
+        2026-04-15 00:32:36,025 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
+        2026-04-15 00:32:36,025 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3469000.0
+        2026-04-15 00:32:36,026 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
+        """
 
         # 너무 노이즈가 심하다. 볼밴 탈출이랑, 좀 쉽게 안잡히게 변경해보자
         self.pivot_state = self.redis.hget_data(self.pref_pivot_state, self.ticker) 
@@ -376,12 +398,12 @@ class CvAutoTradeProd02Gen02Core():
             is_pivot_low()
 
         elif self.pivot_state == "pivot_low":
-            is_pivot_low()
-            self.log.info(f"current_price : {self.current_price}")
-            self.log.info(f"lowest_price_after_bbbb : {lowest_price_after_bbbb}")
+            if is_pivot_high() == True:
+                self.log.info(f"current_price : {self.current_price}")
+                self.log.info(f"lowest_price_after_bbbb : {lowest_price_after_bbbb}")
 
-            # 저점 갱신형이면 손절
-            # 저점 위에서 버티면 다음 단계로 
+                # 저점 갱신형이면 손절
+                # 저점 위에서 버티면 다음 단계로 
 
             # cond_higher_low = low2[2] > low1[2]
             # cond_rebound = self.current_price > low2[2]
