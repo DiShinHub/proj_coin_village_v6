@@ -86,7 +86,6 @@ class CvAutoTradeProd02Gen02Core():
     def __init__(self, seq, ticker, order_book, order_intensity, order_max, paper_trading=False):
         
         self.log = Log(os.path.basename(__file__)).get_logger()
-        #self.trade_result_dao = TradeResultDao()
         self.seq = seq
         self.redis = redis_single
         self.upbit = ExChangeUpbit()
@@ -145,8 +144,14 @@ class CvAutoTradeProd02Gen02Core():
             elif self.mode == "on_bbbb":
                 self.on_bbbb()
                 
-            elif self.mode == "after_bbbb":
-                self.after_bbbb()
+            elif self.mode == "on_bbbb_out":
+                self.on_bbbb_out()
+                
+            elif self.mode == "on_pivot_high":
+                self.on_pivot_high()
+                
+            elif self.mode == "on_pivot_low":
+                self.on_pivot_low()
                 
             else:
                 self.off_bbbb()
@@ -197,7 +202,7 @@ class CvAutoTradeProd02Gen02Core():
         self.upbit.set_bollinger_partition()
         self.df = self.upbit.get_df()
         
-        self.current_price = float(self.df["close"].iloc[-1])
+        self.current_price = self.order_book.get("trade_price") 
         self.bollinger_state_crr = int(self.df["bollinger_partition"].iloc[-1])
         self.bollinger_state_prev = int(self.df["bollinger_partition"].iloc[-2])
         
@@ -232,7 +237,7 @@ class CvAutoTradeProd02Gen02Core():
         self.upbit.set_bollinger_partition()
         self.df = self.upbit.get_df()
         
-        self.current_price = float(self.df["close"].iloc[-1])
+        self.current_price = self.order_book.get("trade_price") 
         self.close_price_list = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
         self.bollinger_state_crr = int(self.df["bollinger_partition"].iloc[-1])
         self.bollinger_state_prev = int(self.df["bollinger_partition"].iloc[-2])
@@ -292,6 +297,7 @@ class CvAutoTradeProd02Gen02Core():
             self.bollinger_state_prev in ([5, 6]):
             self.reset_bbbb(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였습니다. 모니터링을 중단합니다.")
 
+
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_after_bbbb(self):
 
@@ -320,102 +326,88 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
 
             # 매매 기록 및 강도 올림
-            if self.redis.hget_data(self.pref_bbbb_price, self.ticker):
-                self.redis.hupd_date(self.pref_mode, self.ticker, "after_bbbb")                  
+            if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
+                self.pre_bbbb_out()
+
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_bbbb_out(self):
+        self.redis.hupd_date(self.pref_mode, self.ticker, "on_bbbb_out")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
-    def after_bbbb(self):
+    def on_bbbb_out(self):
         
         # 전처리 
         self.upbit.set_ohlcv(interval="minute5")
         self.upbit.set_bollinger_partition()
         self.df = self.upbit.get_df()
         
-        self.current_price = float(self.df["close"].iloc[-1])
+        self.current_price = self.order_book.get("trade_price") 
         self.close_price_list = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
+        self.bollinger_state_crr = int(self.df["bollinger_partition"].iloc[-1])
+        self.bollinger_state_prev = int(self.df["bollinger_partition"].iloc[-2])
         
-        # 최저가 계산 
-        lowest_price_after_bbbb = self.redis.hget_data(self.pref_lowest_price_after_bbbb, self.ticker)
-        if lowest_price_after_bbbb:
-            lowest_price_after_bbbb = float(lowest_price_after_bbbb)
-            if self.current_price < lowest_price_after_bbbb:
-                lowest_price_after_bbbb = self.current_price
-                self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, lowest_price_after_bbbb)
-                
+        self.lowest_price_after_bbbb = float(self.redis.hget_data(self.pref_lowest_price_after_bbbb, self.ticker))
+
+        if self.is_bbbb_out() == True:
+            if self.is_pivot_high() == True:
+                self.pre_pivot_high()
+                return
+
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_pivot_high(self):
+        self.redis.hupd_date(self.pref_mode, self.ticker, "on_pivot_high")
+        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} we are here pre_pivot_high")
+
+    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
+    def on_pivot_high(self):
+        
+        # 전처리 
+        self.upbit.set_ohlcv(interval="minute5")
+        self.upbit.set_bollinger_partition()
+        self.df = self.upbit.get_df()
+        
+        self.current_price = self.order_book.get("trade_price") 
+        self.close_price_list = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
+        self.bollinger_state_crr = int(self.df["bollinger_partition"].iloc[-1])
+        self.bollinger_state_prev = int(self.df["bollinger_partition"].iloc[-2])
+        self.lowest_price_after_bbbb = float(self.redis.hget_data(self.pref_lowest_price_after_bbbb, self.ticker))
+
+        if self.is_bbbb() == True:
+            self.pre_on_bbbb()
+        
         else:
-            lowest_price_after_bbbb = self.current_price
-            self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, lowest_price_after_bbbb)
+            if self.is_pivot_low() == True:
+                self.pre_pivot_low()
 
-        def is_pivot_high():
-            c1 = self.close_price_list[-3]
-            c2 = self.close_price_list[-2]
-            c3 = self.close_price_list[-1]
-            if c1 < c2:
-                if c1 < c3:
-                    self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_high")
-                    return True
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_pivot_low(self):
+        self.redis.hupd_date(self.pref_pivot_state, self.ticker, "on_pivot_low")
+        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} we are here pre_pivot_low")
 
-            return False
-                
-        def is_pivot_low():
-            c1 = self.close_price_list[-3]
-            c2 = self.close_price_list[-2]
-            c3 = self.close_price_list[-1]
-            if c1 > c2:
-                if c1 > c3:
-                    self.redis.hupd_date(self.pref_pivot_state, self.ticker, "pivot_low")
-                    return True
+    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
+    def on_pivot_low(self):
+        if self.is_bbbb() == True:
+            self.pre_on_bbbb()
+            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 손절각 1") 
+        
+        else:
+            if self.is_pivot_lil_high() == True:
+                if self.lowest_price_after_bbbb > self.current_price:
+                    self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 손절각 2") 
+                    pass
 
-            return False
+                else:
+                    self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} on to the next")
+                    self.reset_bbbb()
 
-        # lowest_price_after_bbbb가 왜케 높게 잡혔지 종가 기준이라 그런가 확인만 
-        """
-        2026-04-15 00:32:35,031 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
-        2026-04-15 00:32:35,031 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3468000.0
-        2026-04-15 00:32:35,032 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
-        2026-04-15 00:32:35,356 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
-        2026-04-15 00:32:35,357 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3468000.0
-        2026-04-15 00:32:35,357 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
-        2026-04-15 00:32:35,694 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
-        2026-04-15 00:32:35,695 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3468000.0
-        2026-04-15 00:32:35,696 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
-        2026-04-15 00:32:36,025 - cv_auto_trade_prod02_gen02 - INFO - self.pivot_state : pivot_low
-        2026-04-15 00:32:36,025 - cv_auto_trade_prod02_gen02 - INFO - current_price : 3469000.0
-        2026-04-15 00:32:36,026 - cv_auto_trade_prod02_gen02 - INFO - lowest_price_after_bbbb : 3453000.0
-        """
+    
 
-        # 너무 노이즈가 심하다. 볼밴 탈출이랑, 좀 쉽게 안잡히게 변경해보자
-        self.pivot_state = self.redis.hget_data(self.pref_pivot_state, self.ticker) 
-        self.log.info(f"self.pivot_state : {self.pivot_state}")
 
-        if self.pivot_state == None:
-            is_pivot_high()
 
-        elif self.pivot_state == "pivot_high":
-            is_pivot_low()
 
-        elif self.pivot_state == "pivot_low":
-            if is_pivot_high() == True:
-                self.log.info(f"current_price : {self.current_price}")
-                self.log.info(f"lowest_price_after_bbbb : {lowest_price_after_bbbb}")
-
-                # 저점 갱신형이면 손절
-                # 저점 위에서 버티면 다음 단계로 
-
-            # cond_higher_low = low2[2] > low1[2]
-            # cond_rebound = self.current_price > low2[2]
-
-            # if cond_higher_low and cond_rebound:
-            #     pivot_price = low2[2]
-                
-            
-        # if self.close_price_list[-2] < self.close_price_list[-1]:
-            # self.redis.hupd_date(self.pref_mode, self.ticker, "on_mt")   
-
-            
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def on_mt(self):   
         
@@ -567,6 +559,51 @@ class CvAutoTradeProd02Gen02Core():
         #         #     self.execute_add_buy()
         
         # 
+
+    
+    def is_bbbb(self):
+        if (self.bollinger_state_crr == 1 and\
+            self.bollinger_state_prev == 1):
+                return True
+
+        return False
+    
+    def is_bbbb_out(self):
+        if (self.bollinger_state_crr > 2 and\
+            self.bollinger_state_prev > 1):
+                return True
+
+        return False
+    
+    def is_pivot_high(self):
+        c1 = self.close_price_list[-2]
+        c2 = self.close_price_list[-1]
+        c3 = self.current_price
+        if c1 < c2:
+            if c2 < c3:
+                return True
+
+        return False
+    
+    def is_pivot_lil_high(self):
+        c2 = self.close_price_list[-1]
+        c3 = self.current_price
+        if c2 < c3:
+            return True
+
+        return False
+            
+    def is_pivot_low(self):
+        c1 = self.close_price_list[-2]
+        c2 = self.close_price_list[-1]
+        c3 = self.current_price
+
+        if c1 > c2:
+            if c2 > c3:
+                return True
+
+        return False
+        
     """
     BBBB reset
     """
