@@ -247,7 +247,7 @@ class CvAutoTradeProd02Gen02Core():
             
             # CASE 1-3 : 정상 케이스, 매수
             else:
-                self.pre_after_bbbb()
+                self.pre_bbbb_out()
                 return
     
         # CASE 2: 매수 없이 상승세 감지      
@@ -256,7 +256,7 @@ class CvAutoTradeProd02Gen02Core():
             self.reset_bbbb(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였습니다. 모니터링을 중단합니다.")
 
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_after_bbbb(self):
+    def pre_bbbb_out(self):
 
         # 매매 진행
         order_dt = str(generate_now_date())
@@ -287,12 +287,12 @@ class CvAutoTradeProd02Gen02Core():
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
-                self.pre_bbbb_out()
-
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_bbbb_out(self):
-        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "on_bbbb_out")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} bbbb를 빠져나갔습니다.")
+        
+            # 상태 변경
+            self.redis.hupd_date(self.pref_cycle_state, self.ticker, "on_bbbb_out")
+        
+        else:
+            self.reset_bbbb()
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def on_bbbb_out(self):
