@@ -384,10 +384,9 @@ class CvAutoTradeProd02Gen02Core():
         
         if self.current_price: 
             self.current_price = float(self.current_price)
-            
+        
         else:
-            self.log.info(f"miss current_price : self.current_price = {self.current_price}") 
-            raise Exception("miss current_price")
+            self.current_price = float(self.df["close"].iloc[-1])
 
     def set_bolinger(self):
         self.bollinger_state_crr = int(self.df["bollinger_partition"].iloc[-1])
@@ -396,10 +395,12 @@ class CvAutoTradeProd02Gen02Core():
     # State of cycle
     def set_bbbb(self):
         self.bbbb_price = self.redis.hget_data(self.pref_bbbb_price, self.ticker) 
-        if self.bbbb_price: self.bbbb_price = float(self.bbbb_price)
+        if self.bbbb_price: 
+            self.bbbb_price = float(self.bbbb_price)
         
-        self.lowest_price_after_bbbb = float(self.redis.hget_data(self.pref_lowest_price_after_bbbb, self.ticker))
-        if self.lowest_price_after_bbbb: self.bbbb_price = float(self.lowest_price_after_bbbb)
+        self.lowest_price_after_bbbb = self.redis.hget_data(self.pref_lowest_price_after_bbbb, self.ticker)
+        if self.lowest_price_after_bbbb: 
+            self.lowest_price_after_bbbb = float(self.lowest_price_after_bbbb)
     
     def set_orders(self):
         
