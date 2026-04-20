@@ -287,7 +287,11 @@ class CvAutoTradeProd02Gen02Core():
             self.log.info(f"bbbb_price_here1 : {bbbb_price_here}")
 
             if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
-                self.log.info(f"bbbb_price_here2 : {bbbb_price_here}")
+                self.log.info(f"bbbb_price_here2 : {bbbb_price_here}")   
+                self.log.info(f"self.order_amount : {self.order_amount}")   
+                self.log.info(f"self.order_percent_ir : {self.order_percent_ir}")
+                self.log.info(f"self.order_hurdle : {self.order_hurdle}")   
+                self.log.info(f"self.order_hurdle_ir : {self.order_hurdle_ir}")
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
@@ -345,19 +349,27 @@ class CvAutoTradeProd02Gen02Core():
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def on_pivot_low(self):
+        
+        self.set_base()
+        self.set_bolinger()
+        self.set_bbbb()
+
         if self.is_bbbb() == True:
             self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.") 
             self.pre_on_bbbb()
         
         else:
-            if self.is_pivot_lil_high() == True:
+            if self.is_pivot_high() == True:
                 if self.lowest_price_after_bbbb > self.current_price:
                     self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 하락형 산구도가 형성되었습니다.") 
                     self.reset_bbbb()
 
                 else:
                     self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다.") 
-                    # To Next
+                    
+                    # TODO, 임시 종료, 다음 단계로 돌릴예정
+                    self.reset_bbbb()
+
 
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def reset_bbbb(self, msg):
@@ -488,30 +500,20 @@ class CvAutoTradeProd02Gen02Core():
     def is_pivot_high(self):
         if self.close_price_list:
             if len(self.close_price_list) > 3:
-                c1 = self.close_price_list[-2]
-                c2 = self.close_price_list[-1]
+                c1 = self.close_price_list[-3]
+                c2 = self.close_price_list[-2]
                 c3 = self.current_price
                 if c1 < c2:
                     if c2 < c3:
                         return True
 
         return False
-    
-    def is_pivot_lil_high(self):
-        if self.close_price_list:
-            if len(self.close_price_list) > 3:
-                c2 = self.close_price_list[-1]
-                c3 = self.current_price
-                if c2 < c3:
-                    return True
 
-        return False
-            
     def is_pivot_low(self):
         if self.close_price_list:
             if len(self.close_price_list) > 3:
-                c1 = self.close_price_list[-2]
-                c2 = self.close_price_list[-1]
+                c1 = self.close_price_list[-3]
+                c2 = self.close_price_list[-2]
                 c3 = self.current_price
 
                 if c1 > c2:
@@ -519,3 +521,13 @@ class CvAutoTradeProd02Gen02Core():
                         return True
 
         return False
+    
+    # def is_pivot_lil_high(self):
+    #     if self.close_price_list:
+    #         if len(self.close_price_list) > 3:
+    #             c2 = self.close_price_list[-2]
+    #             c3 = self.current_price
+    #             if c2 < c3:
+    #                 return True
+
+    #     return False
