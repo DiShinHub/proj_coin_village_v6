@@ -283,7 +283,11 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
 
             # 매매 기록 및 강도 올림
+            bbbb_price_here = self.redis.hget_data(self.pref_bbbb_price, self.ticker)
+            self.log.info(f"bbbb_price_here1 : {bbbb_price_here}")
+
             if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
+                self.log.info(f"bbbb_price_here2 : {bbbb_price_here}")
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
@@ -327,6 +331,7 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, self.lowest_price_after_bbbb)
 
         if self.is_bbbb() == True:
+            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.") 
             self.pre_on_bbbb()
         
         else:
@@ -335,7 +340,7 @@ class CvAutoTradeProd02Gen02Core():
 
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_pivot_low(self):
-        self.redis.hupd_date(self.cycle_state, self.ticker, "on_pivot_low")
+        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "on_pivot_low")
         self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 하락형 피벗 전환입니다.")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
