@@ -130,9 +130,9 @@ class CvAutoTradeProd02Gen02Core():
     def run(self):
         
         try:
-            self.set_indicators()
-            self.set_state_bucket()
             self.set_order_option()
+            self.set_state_bucket()
+            self.set_indicators()
         
             if self.cycle_state == "off_bbbb":
                 self.off_bbbb()
@@ -554,7 +554,7 @@ class CvAutoTradeProd02Gen02Core():
         self.order_amount = self.redis.hget_data(self.pref_order_amount, self.ticker) # 주문량
         
         if self.order_hurdle: self.order_hurdle = float(self.order_hurdle)
-        else:  self.order_hurdle = self.order_hurdle_iv
+        else: self.order_hurdle = self.order_hurdle_iv
 
         if self.order_amount: self.order_amount = float(self.order_amount)
         else: self.order_amount = 0
