@@ -173,7 +173,10 @@ class CvAutoTradeProd02Gen02Core():
             self.init_cycle(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
 
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_on_bbbb(self):
+    def pre_on_bbbb(self, msg=None):
+        
+        if msg:
+            self.redis.save_msg_on_Q(msg)
             
         # bbbb의 가격을 현재가로 잡고 bbbb 상태 변경
         self.redis.hupd_date(self.pref_bbbb_price, self.ticker, self.current_price) 
@@ -260,7 +263,7 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.hupd_date(self.pref_cycle_state, self.ticker, "on_bbbb_out")
         
         else:
-            self.init_state()
+            self.init_state("매수에 실패햐였습니다.")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def on_bbbb_out(self):
@@ -287,8 +290,7 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, self.lowest_price_after_bbbb)
 
         if self.is_bbbb() == True:
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.") 
-            self.pre_on_bbbb()
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
         
         else:
             if self.is_lift_down() == True:
@@ -303,24 +305,21 @@ class CvAutoTradeProd02Gen02Core():
     def after_bbbb_unstable_pivot_low(self):
 
         if self.is_bbbb() == True:
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.") 
-            self.pre_on_bbbb()
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
         
         else:
             if self.is_lift_up() == True:
                 if self.lowest_price_after_bbbb > self.current_price:
-                    self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 하락형 산구도가 형성되었습니다.") 
-                    self.init_state()
+                    self.init_state(f"{self.slack_post_prefix} : {self.ticker} 하락형 산구도가 형성되었습니다.")
 
                 else:
-                    self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다.") 
                     self.pre_after_bbbb_stable()
                     
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_after_bbbb_stable(self):
         
         self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb_stable")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} bbbb 안정화 단계에 돌입합니다.")
+        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다. bbbb 안정화 단계 모니터링에 돌입합니다.") 
         
         # 아마 추매
         # 그리고 지정가 지정하여 평단에서 50% 정도 팔기
@@ -381,17 +380,14 @@ class CvAutoTradeProd02Gen02Core():
     def after_bbbb_stable(self):
         
         if self.lowest_price_after_bbbb > self.current_price:
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 최하단 돌파입니다. 상태를 초기화힙니다.") 
-            self.init_state()
+            self.init_state(f"{self.slack_post_prefix} : {self.ticker} 최하단 돌파입니다. 상태를 초기화힙니다.")
         
         if self.is_bbbb():
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.") 
-            self.pre_on_bbbb()
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
         
         # TODO 이건 지워야함 나중에, 테스팅 제약 용도
         if self.is_bbbt():
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승캐치, 테스팅 종료") 
-            self.init_state()
+            self.init_state(f"{self.slack_post_prefix} : {self.ticker} 상승캐치, 테스팅 종료")
             
         """
         TEST START
@@ -474,6 +470,7 @@ class CvAutoTradeProd02Gen02Core():
         
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def init_state(self, msg):
+        
         # 상태만 초기화
         self.redis.hdel_data(self.pref_bbbb_price, self.ticker)
         self.redis.hdel_data(self.pref_cycle_state, self.ticker)
@@ -632,13 +629,22 @@ class CvAutoTradeProd02Gen02Core():
         """
         if self.close_price_list:
             if len(self.close_price_list) > 3:
-                c1 = self.close_price_list[-3]
+                
+                c0 = self.current_price
+                c1 = self.close_price_list[-1]
                 c2 = self.close_price_list[-2]
-                c3 = self.current_price
-                if c1 < c2:
-                    if c2 < c3:
-                        return True
-
+                c3 = self.close_price_list[-3]
+                c4 = self.close_price_list[-4]
+                
+                s = 0
+                if c0 > c1: s += 1
+                if c1 > c2: s += 1
+                if c2 > c3: s += 1
+                if c3 > c4: s += 1
+                    
+                if s >= 3:
+                    return True
+                    
         return False
 
     def is_lift_down(self):
@@ -647,15 +653,55 @@ class CvAutoTradeProd02Gen02Core():
         """
         if self.close_price_list:
             if len(self.close_price_list) > 3:
-                c1 = self.close_price_list[-3]
+                
+                c0 = self.current_price
+                c1 = self.close_price_list[-1]
                 c2 = self.close_price_list[-2]
-                c3 = self.current_price
-
-                if c1 > c2:
-                    if c2 > c3:
-                        return True
+                c3 = self.close_price_list[-3]
+                c4 = self.close_price_list[-4]
+                
+                s = 0
+                if c0 < c1: s += 1
+                if c1 < c2: s += 1
+                if c2 < c3: s += 1
+                if c3 < c4: s += 1
+                    
+                if s >= 3:
+                    return True
 
         return False
+    
+    
+    # def is_lift_up(self):
+    #     """
+    #     - 2전 종가 < 1전 종가 < 현재가
+    #     """
+    #     if self.close_price_list:
+    #         if len(self.close_price_list) > 3:
+    #             c1 = self.close_price_list[-3]
+    #             c2 = self.close_price_list[-2]
+    #             c3 = self.current_price
+    #             if c1 < c2:
+    #                 if c2 < c3:
+    #                     return True
+
+    #     return False
+
+    # def is_lift_down(self):
+    #     """
+    #     - 2전 종가 > 1전 종가 > 현재가
+    #     """
+    #     if self.close_price_list:
+    #         if len(self.close_price_list) > 3:
+    #             c1 = self.close_price_list[-3]
+    #             c2 = self.close_price_list[-2]
+    #             c3 = self.current_price
+
+    #             if c1 > c2:
+    #                 if c2 > c3:
+    #                     return True
+
+    #     return False
     
     # def is_pivot_lil_high(self):
     #     if self.close_price_list:
@@ -666,3 +712,5 @@ class CvAutoTradeProd02Gen02Core():
     #                 return True
 
     #     return False
+    
+    
