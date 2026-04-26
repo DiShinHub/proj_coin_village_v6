@@ -223,6 +223,10 @@ class ExChangeCalculator():
         return self.df
     
     def set_volume_ratio(self):
+
+        if "volume_ma20" not in self.df.columns:
+            self.set_volume_ma20()
+
         self.df["volume_ratio"] = self.df["volume"] / self.df["volume_ma20"]
         return self.df
     
@@ -242,6 +246,10 @@ class ExChangeCalculator():
         return self.df
     
     def set_volume_spike(self):
+
+        if "volume_ma20" not in self.df.columns:
+            self.set_volume_ma20()
+
         self.df["volume_spike"] = self.df["volume"] > (self.df["volume_ma20"] * 2)
         return self.df
     
@@ -586,6 +594,10 @@ class ExChangeCalculator():
         return self.df
 
     def set_volume_ma_ratio(self):
+        
+        if "volume_ma20" not in self.df.columns:
+            self.set_volume_ma20()
+            
         self.df['volume_ma_ratio'] = self.df['volume'].astype(float) / self.df['volume_ma20'].astype(float)
         return self.df
     
