@@ -247,14 +247,8 @@ class CvAutoTradeProd02Gen02Core():
 
             # 매매 기록 및 강도 올림
             bbbb_price_here = self.redis.hget_data(self.pref_bbbb_price, self.ticker)
-            self.log.info(f"bbbb_price_here1 : {bbbb_price_here}")
 
             if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
-                self.log.info(f"bbbb_price_here2 : {bbbb_price_here}")   
-                self.log.info(f"self.order_amount : {self.order_amount}")   
-                self.log.info(f"self.order_percent_ir : {self.order_percent_ir}")
-                self.log.info(f"self.order_hurdle : {self.order_hurdle}")   
-                self.log.info(f"self.order_hurdle_ir : {self.order_hurdle_ir}")
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
@@ -341,7 +335,7 @@ class CvAutoTradeProd02Gen02Core():
         self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
         self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
         self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
-        self.volume_volatility_list = [float(c) for c in self.df["vwvolume_volatilityap"].iloc[-10:].tolist()] 
+        self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
         self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
         
         data_list = self.research_result_dao.gets(
@@ -407,7 +401,7 @@ class CvAutoTradeProd02Gen02Core():
         self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
         self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
         self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
-        self.volume_volatility_list = [float(c) for c in self.df["vwvolume_volatilityap"].iloc[-10:].tolist()] 
+        self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
         self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
         
         data_list = self.research_result_dao.gets(
