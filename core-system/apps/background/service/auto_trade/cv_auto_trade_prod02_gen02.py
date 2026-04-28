@@ -101,7 +101,8 @@ class CvAutoTradeProd02Gen02Core():
         self.order_max = order_max
         
         # --- 모드 설정
-        self.cycle_state = None                      # 모드
+        self.cycle_state = None     
+        self.after_bbbb_state = None                      
         
         # --- 유동 값
         self.current_price = None             # 현재가
@@ -114,17 +115,15 @@ class CvAutoTradeProd02Gen02Core():
         self.order_hurdle = 0                 # 주문 허들
         self.order_last_dt = None             # 마지막 주문 시간
 
-        self.pivot_state = None
-        
         # --- prefixes
-        self.pref_servce = str(self.__class__.__name__)
-        self.pref_cycle_state = f"{self.pref_servce}_{self.ticker}_cycle_state"          # 사이클 상태
-        
-        self.pref_bbbb_price = f"{self.pref_servce}_{self.ticker}_bbbb_price"            # bbbb 가격 
-        self.pref_order_amount = f"{self.pref_servce}_{self.ticker}_order_amount"        # 주문량 
-        self.pref_order_hurdle = f"{self.pref_servce}_{self.ticker}_order_hurdle"        # 주문 허들 
-        self.pref_order_last_dt = f"{self.pref_servce}_{self.ticker}_order_last_dt"      # 마지막 주문 시간
-        self.pref_lowest_price_after_bbbb = f"{self.pref_servce}_{self.ticker}_lowest_price_after_bbbb"
+        self.pref_service = str(self.__class__.__name__)
+        self.pref_cycle_state = f"{self.pref_service}_{self.ticker}_cycle_state"                    # 사이클 상태
+        self.pref_after_bbbb_state = f"{self.pref_service}_{self.ticker}_after_bbbb_state"          # after_bbbb_state 상태
+        self.pref_bbbb_price = f"{self.pref_service}_{self.ticker}_bbbb_price"                      # bbbb 가격 
+        self.pref_lowest_price = f"{self.pref_service}_{self.ticker}_lowest_price"                  # 특정 구역의 최저가
+        self.pref_order_amount = f"{self.pref_service}_{self.ticker}_order_amount"                  # 주문량 
+        self.pref_order_hurdle = f"{self.pref_service}_{self.ticker}_order_hurdle"                  # 주문 허들 
+        self.pref_order_last_dt = f"{self.pref_service}_{self.ticker}_order_last_dt"                # 마지막 주문 시간
         
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def run(self):
@@ -140,14 +139,19 @@ class CvAutoTradeProd02Gen02Core():
             elif self.cycle_state == "on_bbbb":
                 self.on_bbbb()
                 
-            elif self.cycle_state == "on_bbbb_out":
-                self.on_bbbb_out()
+            elif self.cycle_state == "after_bbbb":
                 
-            elif self.cycle_state == "after_bbbb_unstable_pivot_high":
-                self.after_bbbb_unstable_pivot_high()
+                if self.after_bbbb_state == "unstable_bbbb_out":
+                    self.after_bbbb_unstable_bbbb_out()
                 
-            elif self.cycle_state == "after_bbbb_unstable_pivot_low":
-                self.after_bbbb_unstable_pivot_low()
+                if self.after_bbbb_state == "unstable_pivot_high":
+                    self.after_bbbb_unstable_pivot_high()
+                
+                elif self.after_bbbb_state == "unstable_pivot_low":
+                    self.after_bbbb_unstable_pivot_low()
+                
+                elif self.after_bbbb_state == "stable":
+                    self.after_bbbb_stable()
                 
             else:
                 self.off_bbbb()
@@ -157,6 +161,9 @@ class CvAutoTradeProd02Gen02Core():
     
     """
     Cycle
+    """
+    """
+    off_bbbb
     """
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def off_bbbb(self):
@@ -171,7 +178,11 @@ class CvAutoTradeProd02Gen02Core():
         elif self.is_bbbt() and\
             self.is_time_over():
             self.init_cycle(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
-
+            return
+        
+    """
+    on_bbbb
+    """
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_on_bbbb(self, msg=None):
         
@@ -210,17 +221,245 @@ class CvAutoTradeProd02Gen02Core():
             
             # CASE 1-3 : 정상 케이스, 매수
             else:
-                self.pre_on_bbbb_out()
+                self.do_buy()
+                self.pre_after_bbbb_unstable_bbbb_out()
                 return
     
         # CASE 2: 매수 없이 상승세 감지      
         elif self.bollinger_state_crr in ([6]) and\
             self.bollinger_state_prev in ([5, 6]):
             self.init_state(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였습니다. 모니터링을 중단합니다.")
-
+            return
+              
+    """
+    after_bbbb
+    unstable_bbbb_out
+    """    
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_on_bbbb_out(self):
+    def pre_after_bbbb_unstable_bbbb_out(self, msg=None):
+        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb")
+        self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "unstable_bbbb_out")
 
+        if msg:
+            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} {msg}")
+
+    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
+    def after_bbbb_unstable_bbbb_out(self):
+
+        if self.is_bbbb_out() == True:
+            if self.is_lift_up() == True:
+                self.do_buy()
+                self.pre_after_bbbb_unstable_pivot_high()
+                return
+        
+        elif self.is_bbbb() == True:
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
+            return
+      
+    """
+    after_bbbb
+    unstable_pivot_high
+    """ 
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_after_bbbb_unstable_pivot_high(self):
+        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb")
+        self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "unstable_pivot_high")
+        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승형 피벗 전환입니다.")
+
+    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
+    def after_bbbb_unstable_pivot_high(self):
+        
+        self.update_lowest_price()
+
+        if self.is_bbbb() == True:
+            self.do_sell()
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
+            return
+        
+        else:
+            if self.is_lift_down() == True:
+                self.pre_after_bbbb_unstable_pivot_low()
+                return
+
+    """
+    after_bbbb
+    unstable_pivot_low
+    """ 
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_after_bbbb_unstable_pivot_low(self):
+        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb")
+        self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "unstable_pivot_low")
+        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 하락형 피벗 전환입니다.")
+
+    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
+    def after_bbbb_unstable_pivot_low(self):
+
+        if self.is_bbbb() == True:
+            self.do_sell()
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
+            return
+        
+        elif self.lowest_price > self.current_price:
+            self.do_sell()
+            self.pre_after_bbbb_unstable_bbbb_out(f"{self.slack_post_prefix} : {self.ticker} 최저가 밑으로 진입합니다.")
+            return
+            
+        else:
+            if self.is_lift_up() == True:
+                if self.lowest_price > self.current_price:
+                    self.do_sell()
+                    self.pre_after_bbbb_unstable_bbbb_out(f"{self.slack_post_prefix} : {self.ticker} 하락형 산구도가 형성되었습니다.")
+                    return
+
+                else:
+                    self.pre_after_bbbb_stable()
+                    return
+                
+    """
+    after_bbbb
+    under stable
+    """      
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def pre_after_bbbb_stable(self):
+        
+        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb")
+        self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "stable")
+        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb_stable")
+        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다. bbbb 안정화 단계 모니터링에 돌입합니다.") 
+        
+        # TODO 평단에 지정가 걸기. 페이퍼 트레이딩 마무리 되면 추가
+
+    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
+    def after_bbbb_stable(self):
+        
+        # CASE 1. 최저가 재진입
+        if self.lowest_price > self.current_price:
+            self.do_sell()
+            self.pre_after_bbbb_unstable_bbbb_out(f"{self.slack_post_prefix} : {self.ticker} 최저가 밑으로 진입합니다.")
+        
+        # CASE 2. BBBB 재진입
+        elif self.is_bbbb():
+            self.do_sell()
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
+        
+        # CASE 3. 상승 반전신호 캐치 
+        elif self.is_bbbt() and\
+            self.is_time_over():
+                
+            self.do_buy()
+            self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 사이클을 마무리합니다. 이후 상황을 면밀히 봐주세요.")
+                
+            # 상승 반전 신호를 찾아 추매하고 사이클을 종료
+            """
+            TEST START
+            """
+            self.upbit.set_rsi()
+            self.upbit.set_atr()
+            self.upbit.set_atr_ratio()
+            self.upbit.set_bollinger_width()
+            self.upbit.set_obv()
+            self.upbit.set_vwap()
+            self.upbit.set_volume_volatility()
+            self.upbit.set_volume_spike()
+            self.df = self.upbit.get_df()
+            
+            self.rsi_list = [float(c) for c in self.df["rsi"].iloc[-10:].tolist()] 
+            self.atr_list = [float(c) for c in self.df["atr"].iloc[-10:].tolist()] 
+            self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
+            self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
+            self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
+            self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
+            self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
+            
+            data_list = self.research_result_dao.gets(
+                page_no=1,
+                row_count=10,
+                type="upbit-regime", 
+                ticker=self.ticker
+            )
+            self.upbit_regime_list = data_list[0:10]
+            
+            data_list = self.research_result_dao.gets(
+                page_no=1,
+                row_count=10,
+                type="upbit-direction", 
+                ticker=self.ticker
+            )
+            self.upbit_direction_list = data_list[0:10]
+            
+            self.upbit.set_ichimoku_cloud_state()
+            self.df = self.upbit.get_df()
+            
+            self.bull_cloud_list = [float(c) for c in self.df["bull_cloud"].iloc[-10:].tolist()]
+            self.bear_cloud_list = [float(c) for c in self.df["bear_cloud"].iloc[-10:].tolist()]
+            
+            self.enter_cloud_list = [float(c) for c in self.df["enter_cloud"].iloc[-10:].tolist()]
+            self.enter_bull_cloud_list = [float(c) for c in self.df["enter_bull_cloud"].iloc[-10:].tolist()]
+            self.enter_bear_cloud_list = [float(c) for c in self.df["enter_bear_cloud"].iloc[-10:].tolist()]
+            self.break_up_cloud_list = [float(c) for c in self.df["break_up_cloud"].iloc[-10:].tolist()]
+            self.cloud_mid_list = [float(c) for c in self.df["cloud_mid"].iloc[-10:].tolist()]
+            self.entry_cloud_slope_list = [float(c) for c in self.df["entry_cloud_slope"].iloc[-10:].tolist()]
+            
+            # 클라우드 진입전/진입의 상태를 나눠야할 수도 있겠다 
+            # 진입 시점의 시간 레디스에 기록
+            # 돌파 시점의 시간 레디스에 기록
+            # 두 시간의 기울기 = 강도 삼아 추매
+            self.log.info(f"=================== after_bbbb_stable ========================")
+            self.log.info(f"self.rsi_list : {self.rsi_list}")
+            self.log.info(f"self.atr_list : {self.atr_list}")
+            self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
+            self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
+            self.log.info(f"self.obv_list : {self.obv_list}")
+            self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
+            self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
+            self.log.info(f"self.upbit_regime_list : {self.upbit_regime_list}")
+            self.log.info(f"self.upbit_direction_list : {self.upbit_direction_list}")
+            
+            self.log.info(f"self.bull_cloud_list : {self.bull_cloud_list}")
+            self.log.info(f"self.bear_cloud_list : {self.bear_cloud_list}")
+            self.log.info(f"self.enter_cloud_list : {self.enter_cloud_list}")
+            self.log.info(f"self.enter_bull_cloud_list : {self.enter_bull_cloud_list}")
+            self.log.info(f"self.enter_bear_cloud_list : {self.enter_bear_cloud_list}")
+            self.log.info(f"self.break_up_cloud_list : {self.break_up_cloud_list}")
+            self.log.info(f"self.cloud_mid_list : {self.cloud_mid_list}")
+            self.log.info(f"self.entry_cloud_slope_list : {self.entry_cloud_slope_list}")
+            self.log.info(f"=================== after_bbbb_stable ========================")
+            
+            """
+            TEST END
+            """
+        
+        elif self.is_bbbt() and\
+            self.is_time_over():
+            self.init_cycle(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
+
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
+    def init_state(self, msg):
+        
+        # 상태만 초기화
+        self.redis.hdel_data(self.pref_bbbb_price, self.ticker)
+        self.redis.hdel_data(self.pref_cycle_state, self.ticker)
+        self.redis.hdel_data(self.pref_after_bbbb_state, self.ticker)
+        self.redis.hdel_data(self.pref_lowest_price, self.ticker)
+        self.redis.save_msg_on_Q(msg)
+    
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
+    def init_cycle(self, msg):
+        
+        # 사이클 전체 초기화
+        self.redis.hdel_data(self.pref_cycle_state, self.ticker)
+        self.redis.hdel_data(self.pref_after_bbbb_state, self.ticker)
+        self.redis.hdel_data(self.pref_bbbb_price, self.ticker)
+        self.redis.hdel_data(self.pref_lowest_price, self.ticker)
+        
+        self.redis.hdel_data(self.pref_order_amount, self.ticker)
+        self.redis.hdel_data(self.pref_order_hurdle, self.ticker)
+        self.redis.hdel_data(self.pref_order_last_dt, self.ticker)
+        self.redis.save_msg_on_Q(msg)
+    
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def do_buy(self):
+        
         # 매매 진행
         order_dt = str(generate_now_date())
         buy_result = self.upbit.buy_coin(self.order_amount)
@@ -246,243 +485,54 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
 
             # 매매 기록 및 강도 올림
-            bbbb_price_here = self.redis.hget_data(self.pref_bbbb_price, self.ticker)
-
             if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
         
-            # 상태 변경
-            self.redis.hupd_date(self.pref_cycle_state, self.ticker, "on_bbbb_out")
-        
         else:
             self.init_state("매수에 실패햐였습니다.")
-
-    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
-    def on_bbbb_out(self):
-
-        if self.is_bbbb_out() == True:
-            if self.is_lift_up() == True:
-                self.pre_after_bbbb_unstable_pivot_high()
-                return
-
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_after_bbbb_unstable_pivot_high(self):
-        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb_unstable_pivot_high")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승형 피벗 전환입니다.")
-
-    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
-    def after_bbbb_unstable_pivot_high(self):
-        
-        if self.lowest_price_after_bbbb == None:
-            self.lowest_price_after_bbbb = self.current_price
-            self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, self.lowest_price_after_bbbb)
-        
-        elif self.lowest_price_after_bbbb > self.current_price:
-            self.lowest_price_after_bbbb = self.current_price
-            self.redis.hupd_date(self.pref_lowest_price_after_bbbb, self.ticker, self.lowest_price_after_bbbb)
-
-        if self.is_bbbb() == True:
-            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
-        
-        else:
-            if self.is_lift_down() == True:
-                self.pre_after_bbbb_unstable_pivot_low()
-
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_after_bbbb_unstable_pivot_low(self):
-        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb_unstable_pivot_low")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 하락형 피벗 전환입니다.")
-
-    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
-    def after_bbbb_unstable_pivot_low(self):
-
-        if self.is_bbbb() == True:
-            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
-        
-        else:
-            if self.is_lift_up() == True:
-                if self.lowest_price_after_bbbb > self.current_price:
-                    self.init_state(f"{self.slack_post_prefix} : {self.ticker} 하락형 산구도가 형성되었습니다.")
-
-                else:
-                    self.pre_after_bbbb_stable()
-                    
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_after_bbbb_stable(self):
-        
-        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb_stable")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다. bbbb 안정화 단계 모니터링에 돌입합니다.") 
-        
-        # 아마 추매
-        # 그리고 지정가 지정하여 평단에서 50% 정도 팔기
-        """
-        TEST START
-        """
-        self.upbit.set_rsi()
-        self.upbit.set_atr()
-        self.upbit.set_atr_ratio()
-        self.upbit.set_bollinger_width()
-        self.upbit.set_obv()
-        self.upbit.set_vwap()
-        self.upbit.set_volume_volatility()
-        self.upbit.set_volume_spike()
-        self.df = self.upbit.get_df()
-        
-        self.rsi_list = [float(c) for c in self.df["rsi"].iloc[-10:].tolist()] 
-        self.atr_list = [float(c) for c in self.df["atr"].iloc[-10:].tolist()] 
-        self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
-        self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
-        self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
-        self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
-        self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
-        
-        data_list = self.research_result_dao.gets(
-            page_no=1,
-            row_count=10,
-            type="upbit-regime", 
-            ticker=self.ticker
-        )
-        self.upbit_regime_list = data_list[0:10]
-        
-        data_list = self.research_result_dao.gets(
-            page_no=1,
-            row_count=10,
-            type="upbit-direction", 
-            ticker=self.ticker
-        )
-        self.upbit_direction_list = data_list[0:10]
-        
-        self.log.info(f"=================== pre_after_bbbb_stable ========================")
-        self.log.info(f"self.rsi_list : {self.rsi_list}")
-        self.log.info(f"self.atr_list : {self.atr_list}")
-        self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
-        self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
-        self.log.info(f"self.obv_list : {self.obv_list}")
-        self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
-        self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
-        self.log.info(f"self.upbit_regime_list : {self.upbit_regime_list}")
-        self.log.info(f"self.upbit_direction_list : {self.upbit_direction_list}")
-        self.log.info(f"=================== pre_after_bbbb_stable ========================")
-        
-        """
-        TEST END
-        """
-
-    @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
-    def after_bbbb_stable(self):
-        
-        if self.lowest_price_after_bbbb > self.current_price:
-            self.init_state(f"{self.slack_post_prefix} : {self.ticker} 최하단 돌파입니다. 상태를 초기화힙니다.")
-        
-        if self.is_bbbb():
-            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} BBBB에 재진입 합니다.")
-        
-        # TODO 이건 지워야함 나중에, 테스팅 제약 용도
-        if self.is_bbbt():
-            self.init_state(f"{self.slack_post_prefix} : {self.ticker} 상승캐치, 테스팅 종료")
-            
-        """
-        TEST START
-        """
-        self.upbit.set_rsi()
-        self.upbit.set_atr()
-        self.upbit.set_atr_ratio()
-        self.upbit.set_bollinger_width()
-        self.upbit.set_obv()
-        self.upbit.set_vwap()
-        self.upbit.set_volume_volatility()
-        self.upbit.set_volume_spike()
-        self.df = self.upbit.get_df()
-        
-        self.rsi_list = [float(c) for c in self.df["rsi"].iloc[-10:].tolist()] 
-        self.atr_list = [float(c) for c in self.df["atr"].iloc[-10:].tolist()] 
-        self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
-        self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
-        self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
-        self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
-        self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
-        
-        data_list = self.research_result_dao.gets(
-            page_no=1,
-            row_count=10,
-            type="upbit-regime", 
-            ticker=self.ticker
-        )
-        self.upbit_regime_list = data_list[0:10]
-        
-        data_list = self.research_result_dao.gets(
-            page_no=1,
-            row_count=10,
-            type="upbit-direction", 
-            ticker=self.ticker
-        )
-        self.upbit_direction_list = data_list[0:10]
-        
-        self.upbit.set_ichimoku_cloud_state()
-        self.df = self.upbit.get_df()
-        
-        self.bull_cloud_list = [float(c) for c in self.df["bull_cloud"].iloc[-10:].tolist()]
-        self.bear_cloud_list = [float(c) for c in self.df["bear_cloud"].iloc[-10:].tolist()]
-        
-        self.enter_cloud_list = [float(c) for c in self.df["enter_cloud"].iloc[-10:].tolist()]
-        self.enter_bull_cloud_list = [float(c) for c in self.df["enter_bull_cloud"].iloc[-10:].tolist()]
-        self.enter_bear_cloud_list = [float(c) for c in self.df["enter_bear_cloud"].iloc[-10:].tolist()]
-        self.break_up_cloud_list = [float(c) for c in self.df["break_up_cloud"].iloc[-10:].tolist()]
-        self.cloud_mid_list = [float(c) for c in self.df["cloud_mid"].iloc[-10:].tolist()]
-        self.entry_cloud_slope_list = [float(c) for c in self.df["entry_cloud_slope"].iloc[-10:].tolist()]
-        
-        # 클라우드 진입전/진입의 상태를 나눠야할 수도 있겠다 
-        # 진입 시점의 시간 레디스에 기록
-        # 돌파 시점의 시간 레디스에 기록
-        # 두 시간의 기울기 = 강도 삼아 추매
-        self.log.info(f"=================== after_bbbb_stable ========================")
-        self.log.info(f"self.rsi_list : {self.rsi_list}")
-        self.log.info(f"self.atr_list : {self.atr_list}")
-        self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
-        self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
-        self.log.info(f"self.obv_list : {self.obv_list}")
-        self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
-        self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
-        self.log.info(f"self.upbit_regime_list : {self.upbit_regime_list}")
-        self.log.info(f"self.upbit_direction_list : {self.upbit_direction_list}")
-        
-        self.log.info(f"self.bull_cloud_list : {self.bull_cloud_list}")
-        self.log.info(f"self.bear_cloud_list : {self.bear_cloud_list}")
-        self.log.info(f"self.enter_cloud_list : {self.enter_cloud_list}")
-        self.log.info(f"self.enter_bull_cloud_list : {self.enter_bull_cloud_list}")
-        self.log.info(f"self.enter_bear_cloud_list : {self.enter_bear_cloud_list}")
-        self.log.info(f"self.break_up_cloud_list : {self.break_up_cloud_list}")
-        self.log.info(f"self.cloud_mid_list : {self.cloud_mid_list}")
-        self.log.info(f"self.entry_cloud_slope_list : {self.entry_cloud_slope_list}")
-        self.log.info(f"=================== after_bbbb_stable ========================")
-        
-        """
-        TEST END
-        """
-        
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
-    def init_state(self, msg):
-        
-        # 상태만 초기화
-        self.redis.hdel_data(self.pref_bbbb_price, self.ticker)
-        self.redis.hdel_data(self.pref_cycle_state, self.ticker)
-        self.redis.hdel_data(self.pref_lowest_price_after_bbbb, self.ticker)
-        self.redis.save_msg_on_Q(msg)
     
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
-    def init_cycle(self, msg):
-        # 사이클 초기화
-        self.redis.hdel_data(self.pref_bbbb_price, self.ticker)
-        self.redis.hdel_data(self.pref_cycle_state, self.ticker)
-        self.redis.hdel_data(self.pref_lowest_price_after_bbbb, self.ticker)
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def do_sell(self):
         
-        self.redis.hdel_data(self.pref_order_amount, self.ticker)
-        self.redis.hdel_data(self.pref_order_hurdle, self.ticker)
-        self.redis.hdel_data(self.pref_order_last_dt, self.ticker)
-        self.redis.save_msg_on_Q(msg)
-    
+        # 매도 진행
+        order_dt = str(generate_now_date())
+        sell_result = self.upbit.sell_coin(self.order_amount/2)
+        if sell_result:
+            self.log.info(f"sell_result : {sell_result}")
+            # params = {
+            #     "exchange": "upbit",
+            #     "ticker": self.ticker,
+            #     "uuid": buy_result.get("uuid"),
+            #     "ord_side": buy_result.get("side"),
+            #     "ord_type": buy_result.get("ord_type"),
+            #     "price": buy_result.get("price"),
+            #     "reserved_fee": buy_result.get("reserved_fee"),
+            #     "remaining_fee": buy_result.get("remaining_fee"),
+            #     "paid_fee": buy_result.get("paid_fee"),
+            #     "state": buy_result.get("state"),
+            #     "locked": buy_result.get("locked"),
+            #     "executed_volume": buy_result.get("executed_volume"),
+            #     "runnable_service_seq": self.seq
+            # }
+            # self.trade_result_dao.insert(params)
+
+            # # 메세지 포스트
+            # self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+
+            # 매매 기록 및 강도 내림
+            if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
+                self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount / self.order_percent_ir)) 
+                self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle / self.order_hurdle_ir))  
+                self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
+                
+                # TODO : DEBUG
+                self.set_state_bucket()
+                self.log.info(f"self.order_amount : {self.order_amount}")
+                self.log.info(f"self.order_hurdle : {self.order_hurdle}")
+                self.log.info(f"self.order_last_dt : {self.order_last_dt}")
+
     """
     Helper
     """
@@ -510,35 +560,22 @@ class CvAutoTradeProd02Gen02Core():
 
         if self.order_reset_hours_if_stable: self.order_reset_hours_if_stable = float(self.order_reset_hours_if_stable)
         else: self.order_reset_hours_if_stable = 24
-            
-    # Indicators, API & Calucator
-    def set_indicators(self):
-        self.upbit.set_ohlcv(interval="minute5")
-        self.upbit.set_bollinger_partition()
-        self.df = self.upbit.get_df()
-        
-        self.current_price = self.order_book.get("trade_price") 
-        if self.current_price: self.current_price = float(self.current_price)
-        else: self.current_price = float(self.df["close"].iloc[-1])
-            
-        self.close_price_list = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
-        self.bollinger_state_crr = float(self.df["bollinger_partition"].iloc[-1])
-        self.bollinger_state_prev = float(self.df["bollinger_partition"].iloc[-2])
-    
+           
     # Standard, Redis
     def set_state_bucket(self):
         
         # state
         self.cycle_state = self.redis.hget_data(self.pref_cycle_state, self.ticker) 
+        self.after_bbbb_state = self.redis.hget_data(self.pref_after_bbbb_state, self.ticker) 
         
         # bbbb
         self.bbbb_price = self.redis.hget_data(self.pref_bbbb_price, self.ticker) 
         if self.bbbb_price: 
             self.bbbb_price = float(self.bbbb_price)
         
-        self.lowest_price_after_bbbb = self.redis.hget_data(self.pref_lowest_price_after_bbbb, self.ticker)
-        if self.lowest_price_after_bbbb: 
-            self.lowest_price_after_bbbb = float(self.lowest_price_after_bbbb)
+        self.lowest_price = self.redis.hget_data(self.pref_lowest_price, self.ticker)
+        if self.lowest_price: 
+            self.lowest_price = float(self.lowest_price)
         
         # order 
         self.order_hurdle = self.redis.hget_data(self.pref_order_hurdle, self.ticker) # 주문 허들
@@ -553,7 +590,32 @@ class CvAutoTradeProd02Gen02Core():
         self.order_last_dt = self.redis.hget_data(self.pref_order_last_dt, self.ticker) # 마지막 주문 시간
         if self.order_last_dt: self.order_last_dt = datetime.datetime.strptime(self.order_last_dt, "%Y-%m-%d %H:%M:%S")
         else: self.order_last_dt = datetime.datetime.now()
+         
+    # Indicators, API & Calucator
+    def set_indicators(self):
+        self.upbit.set_ohlcv(interval="minute5")
+        self.upbit.set_bollinger_partition()
+        self.df = self.upbit.get_df()
+        
+        self.current_price = self.order_book.get("trade_price") 
+        if self.current_price: self.current_price = float(self.current_price)
+        else: self.current_price = float(self.df["close"].iloc[-1])
+            
+        self.close_price_list = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
+        self.bollinger_state_crr = float(self.df["bollinger_partition"].iloc[-1])
+        self.bollinger_state_prev = float(self.df["bollinger_partition"].iloc[-2])
     
+    def update_lowest_price(self):
+        
+        if self.lowest_price == None:
+            self.lowest_price = self.current_price
+            self.redis.hupd_date(self.pref_lowest_price, self.ticker, self.lowest_price)
+        
+        elif self.lowest_price > self.current_price:
+            self.lowest_price = self.current_price
+            self.redis.hupd_date(self.pref_lowest_price, self.ticker, self.lowest_price)
+    
+            
     # Judges
     def is_time_over(self):
         """

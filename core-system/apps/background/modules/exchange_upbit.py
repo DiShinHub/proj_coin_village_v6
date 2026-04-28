@@ -190,6 +190,11 @@ class ExChangeUpbit(ExChangeCalculator):
         """
         
         org_ticker = self.ticker
+        
+        if self.paper_trading == True:
+            sell_result = {
+            }
+            return sell_result
 
         # 전액 매도
         if krw_order == "all":
