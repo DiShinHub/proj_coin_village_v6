@@ -191,9 +191,35 @@ class ExChangeUpbit(ExChangeCalculator):
         
         org_ticker = self.ticker
         
+        fees = 0.0005
         if self.paper_trading == True:
+            
+            if krw_order == "All":
+                self.ticker = self.ticker.replace("KRW-", "")
+                ticker_balance = self.get_ticker_balance()
+                self.ticker = org_ticker
+            
+            else:
+                ticker_balance = krw_order
+            
             sell_result = {
-            }
+                'uuid': 'da2a722e-6179-4e05-aafe-2bc01b2f1a4a', 
+                "side": "ask",
+                "ord_type": "market",
+                'price': str(ticker_balance * (1-fees)), 
+                "state": "wait",
+                "market": "KRW-BTC",
+                'created_at': "", 
+                "volume":  "",
+                "remaining_volume": ".",
+                "reserved_fee": "0",
+                "remaining_fee": "0",
+                "paid_fee": "0",
+                "locked": "",
+                "executed_volume": "0",
+                "trades_count": 0
+                }
+
             return sell_result
 
         # 전액 매도
