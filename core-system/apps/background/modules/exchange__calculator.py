@@ -1742,3 +1742,25 @@ class ExChangeCalculator():
         return self.df
     
     
+    """
+    """
+    def convert_5m_to_15m(self, df_5m):
+        df = df_5m.copy()
+        
+        # datetime 컬럼을 인덱스로
+        df = df.set_index("datetime")
+        
+        df_15m = df.resample("15T").agg({
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum"
+        })
+        
+        # NaN 제거 (불완전 캔들 제거)
+        df_15m = df_15m.dropna()
+        
+        df_15m["datetime"] = df_15m.index
+        
+        return df_15m

@@ -150,8 +150,8 @@ class CvAutoTradeProd02Gen02Core():
                 elif self.after_bbbb_state == "mornitoring_stable":
                     self.after_bbbb_mornitoring_stable()
                 
-            elif self.after_bbbb_state == "stable_bbbb":
-                self.after_bbbb_stable()
+            elif self.cycle_state == "stable_bbbb":
+                self.stable_bbbb()
                 
             else:
                 self.off_bbbb()
@@ -332,7 +332,7 @@ class CvAutoTradeProd02Gen02Core():
 
                     else:
                         # self.do_buy(up_order_intense=False) # TODO 조건부 매수, 너무 많이 오르거나, 하락할 기미가 보이는지 확인.
-                        self.pre_after_bbbb_stable(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다.")
+                        self.pre_stable_bbbb(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다.")
                         return
         
         finally:
@@ -342,7 +342,7 @@ class CvAutoTradeProd02Gen02Core():
     stable_bbbb
     """      
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_after_bbbb_stable(self, msg=None):
+    def pre_stable_bbbb(self, msg=None):
 
         if msg:
             self.redis.save_msg_on_Q(msg) 
@@ -354,7 +354,7 @@ class CvAutoTradeProd02Gen02Core():
         # TODO 지정가 초기화 하고 평단에 지정가 걸기.
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
-    def after_bbbb_stable(self):
+    def stable_bbbb(self):
         
         try:
             if self.is_bbbb() == True:
@@ -386,6 +386,7 @@ class CvAutoTradeProd02Gen02Core():
                 self.upbit.set_vwap()
                 self.upbit.set_volume_volatility()
                 self.upbit.set_volume_spike()
+                self.upbit.set_ichimoku_cloud_state()
                 self.df = self.upbit.get_df()
                 
                 self.rsi_list = [float(c) for c in self.df["rsi"].iloc[-10:].tolist()] 
@@ -395,7 +396,90 @@ class CvAutoTradeProd02Gen02Core():
                 self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
                 self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
                 self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
+                self.bull_cloud_list = [float(c) for c in self.df["bull_cloud"].iloc[-10:].tolist()]
+                self.bear_cloud_list = [float(c) for c in self.df["bear_cloud"].iloc[-10:].tolist()]
+                self.enter_cloud_list = [float(c) for c in self.df["enter_cloud"].iloc[-10:].tolist()]
+                self.enter_bull_cloud_list = [float(c) for c in self.df["enter_bull_cloud"].iloc[-10:].tolist()]
+                self.enter_bear_cloud_list = [float(c) for c in self.df["enter_bear_cloud"].iloc[-10:].tolist()]
+                self.break_up_cloud_list = [float(c) for c in self.df["break_up_cloud"].iloc[-10:].tolist()]
+                self.cloud_mid_list = [float(c) for c in self.df["cloud_mid"].iloc[-10:].tolist()]
+                self.entry_cloud_slope_list = [float(c) for c in self.df["entry_cloud_slope"].iloc[-10:].tolist()]
+                                             
+                self.log.info(f"=================== stable_bbbb 5 ========================")
+                self.log.info(f"self.rsi_list : {self.rsi_list}")
+                self.log.info(f"self.atr_list : {self.atr_list}")
+                self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
+                self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
+                self.log.info(f"self.obv_list : {self.obv_list}")
+                self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
+                self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
+                self.log.info(f"self.bull_cloud_list : {self.bull_cloud_list}")
+                self.log.info(f"self.bear_cloud_list : {self.bear_cloud_list}")
+                self.log.info(f"self.enter_cloud_list : {self.enter_cloud_list}")
+                self.log.info(f"self.enter_bull_cloud_list : {self.enter_bull_cloud_list}")
+                self.log.info(f"self.enter_bear_cloud_list : {self.enter_bear_cloud_list}")
+                self.log.info(f"self.break_up_cloud_list : {self.break_up_cloud_list}")
+                self.log.info(f"self.cloud_mid_list : {self.cloud_mid_list}")
+                self.log.info(f"self.entry_cloud_slope_list : {self.entry_cloud_slope_list}")
+                self.log.info(f"=================== stable_bbbb 5 ========================")  
+                                    
+                # df 15s
+                self.upbit.set_df(self.upbit.convert_5m_to_15m(self.df))
+                self.upbit.set_bollinger_partition()
+                self.upbit.set_rsi()
+                self.upbit.set_atr()
+                self.upbit.set_atr_ratio()
+                self.upbit.set_bollinger_width()
+                self.upbit.set_obv()
+                self.upbit.set_vwap()
+                self.upbit.set_volume_volatility()
+                self.upbit.set_volume_spike()
+                self.upbit.set_ichimoku_cloud_state()
+                self.df = self.upbit.get_df()
+                    
+                self.close_price_list_15 = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
+                self.bollinger_state_crr_15 = float(self.df["bollinger_partition"].iloc[-1])
+                self.bollinger_state_prev_15 = float(self.df["bollinger_partition"].iloc[-2])
+
+                self.rsi_list = [float(c) for c in self.df["rsi"].iloc[-10:].tolist()] 
+                self.atr_list = [float(c) for c in self.df["atr"].iloc[-10:].tolist()] 
+                self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
+                self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
+                self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
+                self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
+                self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
+                self.bull_cloud_list = [float(c) for c in self.df["bull_cloud"].iloc[-10:].tolist()]
+                self.bear_cloud_list = [float(c) for c in self.df["bear_cloud"].iloc[-10:].tolist()]
+                self.enter_cloud_list = [float(c) for c in self.df["enter_cloud"].iloc[-10:].tolist()]
+                self.enter_bull_cloud_list = [float(c) for c in self.df["enter_bull_cloud"].iloc[-10:].tolist()]
+                self.enter_bear_cloud_list = [float(c) for c in self.df["enter_bear_cloud"].iloc[-10:].tolist()]
+                self.break_up_cloud_list = [float(c) for c in self.df["break_up_cloud"].iloc[-10:].tolist()]
+                self.cloud_mid_list = [float(c) for c in self.df["cloud_mid"].iloc[-10:].tolist()]
+                self.entry_cloud_slope_list = [float(c) for c in self.df["entry_cloud_slope"].iloc[-10:].tolist()]
+                                             
+                self.log.info(f"=================== stable_bbbb 15 ========================")
+                self.log.info(f"self.close_price_list_15 : {self.close_price_list_15}")
+                self.log.info(f"self.bollinger_state_crr_15 : {self.bollinger_state_crr_15}")
+                self.log.info(f"self.bollinger_state_prev_15 : {self.bollinger_state_prev_15}")
                 
+                self.log.info(f"self.rsi_list : {self.rsi_list}")
+                self.log.info(f"self.atr_list : {self.atr_list}")
+                self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
+                self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
+                self.log.info(f"self.obv_list : {self.obv_list}")
+                self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
+                self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
+                self.log.info(f"self.bull_cloud_list : {self.bull_cloud_list}")
+                self.log.info(f"self.bear_cloud_list : {self.bear_cloud_list}")
+                self.log.info(f"self.enter_cloud_list : {self.enter_cloud_list}")
+                self.log.info(f"self.enter_bull_cloud_list : {self.enter_bull_cloud_list}")
+                self.log.info(f"self.enter_bear_cloud_list : {self.enter_bear_cloud_list}")
+                self.log.info(f"self.break_up_cloud_list : {self.break_up_cloud_list}")
+                self.log.info(f"self.cloud_mid_list : {self.cloud_mid_list}")
+                self.log.info(f"self.entry_cloud_slope_list : {self.entry_cloud_slope_list}")
+                self.log.info(f"=================== stable_bbbb 15 ========================")  
+                
+                # middle indi
                 data_list = self.research_result_dao.gets(
                     page_no=1,
                     row_count=10,
@@ -412,49 +496,20 @@ class CvAutoTradeProd02Gen02Core():
                 )
                 self.upbit_direction_list = data_list[0:10]
                 
-                self.upbit.set_ichimoku_cloud_state()
-                self.df = self.upbit.get_df()
-                
-                self.bull_cloud_list = [float(c) for c in self.df["bull_cloud"].iloc[-10:].tolist()]
-                self.bear_cloud_list = [float(c) for c in self.df["bear_cloud"].iloc[-10:].tolist()]
-                
-                self.enter_cloud_list = [float(c) for c in self.df["enter_cloud"].iloc[-10:].tolist()]
-                self.enter_bull_cloud_list = [float(c) for c in self.df["enter_bull_cloud"].iloc[-10:].tolist()]
-                self.enter_bear_cloud_list = [float(c) for c in self.df["enter_bear_cloud"].iloc[-10:].tolist()]
-                self.break_up_cloud_list = [float(c) for c in self.df["break_up_cloud"].iloc[-10:].tolist()]
-                self.cloud_mid_list = [float(c) for c in self.df["cloud_mid"].iloc[-10:].tolist()]
-                self.entry_cloud_slope_list = [float(c) for c in self.df["entry_cloud_slope"].iloc[-10:].tolist()]
-                
                 # 클라우드 진입전/진입의 상태를 나눠야할 수도 있겠다 
                 # 진입 시점의 시간 레디스에 기록
                 # 돌파 시점의 시간 레디스에 기록
                 # 두 시간의 기울기 = 강도 삼아 추매
-                self.log.info(f"=================== after_bbbb_stable ========================")
-                self.log.info(f"self.rsi_list : {self.rsi_list}")
-                self.log.info(f"self.atr_list : {self.atr_list}")
-                self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
-                self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
-                self.log.info(f"self.obv_list : {self.obv_list}")
-                self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
-                self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
+                self.log.info(f"=================== stable_bbbb middle indi ========================")
                 self.log.info(f"self.upbit_regime_list : {self.upbit_regime_list}")
                 self.log.info(f"self.upbit_direction_list : {self.upbit_direction_list}")
+                self.log.info(f"=================== stable_bbbb middle indi ========================")
                 
-                self.log.info(f"self.bull_cloud_list : {self.bull_cloud_list}")
-                self.log.info(f"self.bear_cloud_list : {self.bear_cloud_list}")
-                self.log.info(f"self.enter_cloud_list : {self.enter_cloud_list}")
-                self.log.info(f"self.enter_bull_cloud_list : {self.enter_bull_cloud_list}")
-                self.log.info(f"self.enter_bear_cloud_list : {self.enter_bear_cloud_list}")
-                self.log.info(f"self.break_up_cloud_list : {self.break_up_cloud_list}")
-                self.log.info(f"self.cloud_mid_list : {self.cloud_mid_list}")
-                self.log.info(f"self.entry_cloud_slope_list : {self.entry_cloud_slope_list}")
-                self.log.info(f"=================== after_bbbb_stable ========================")
-                
-                """
-                TEST END
-                """
-                self.do_buy(up_order_intense=False)
-                self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
+                # """
+                # TEST END
+                # """
+                # self.do_buy(up_order_intense=False)
+                # self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
                     
         finally:
             self.update_lowest_price()
@@ -621,7 +676,7 @@ class CvAutoTradeProd02Gen02Core():
          
     # Indicators, API & Calucator
     def set_indicators(self):
-        self.upbit.set_ohlcv(interval="minute5")
+        self.upbit.set_ohlcv(interval="minute5", count=200)
         self.upbit.set_bollinger_partition()
         self.df = self.upbit.get_df()
         
