@@ -327,7 +327,7 @@ class CvAutoTradeProd02Gen02Core():
                     return
 
                 else:
-                    self.pre_stable_bbbb(f"{} 상승형 산구도가 형성되었습니다. BBBB 안정화 단계 모니터링을 시작합니다.")
+                    self.pre_stable_bbbb(f"{self.pref_msg} 상승형 산구도가 형성되었습니다. BBBB 안정화 단계 모니터링을 시작합니다.")
                     
                     # TODO 조건부 매수, 너무 많이 오르거나, 하락할 기미가 보이는지 확인
                     if True:
