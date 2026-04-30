@@ -160,9 +160,6 @@ class CvAutoTradeProd02Gen02Core():
             self.log.info(f"{str(e)}")
     
     """
-    Cycle
-    """
-    """
     off_bbbb
     """
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
@@ -171,13 +168,13 @@ class CvAutoTradeProd02Gen02Core():
         
         # 하락세 감지, 모니터링 돌입
         if self.is_bbbb():
-            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker}의 하단 무너짐이 감시 되었습니다.")
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 하단 무너짐이 감시 되었습니다. BBBB 모니터링을 시작합니다.")
             return
             
         # CASE 2: 매수 없이 상승세 감지      
         elif self.is_bbbt() and\
             self.is_time_over():
-            self.init_cycle(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
+            self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
             return
         
     """
@@ -185,14 +182,13 @@ class CvAutoTradeProd02Gen02Core():
     """
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_on_bbbb(self, msg=None):
-        
-        if msg:
-            self.redis.save_msg_on_Q(msg)
             
         # bbbb의 가격을 현재가로 잡고 bbbb 상태 변경
         self.redis.hupd_date(self.pref_bbbb_price, self.ticker, self.current_price) 
         self.redis.hupd_date(self.pref_cycle_state, self.ticker, "on_bbbb")
-        self.redis.save_msg_on_Q(f"BBBB 모니터링을 시작합니다.")
+        
+        if msg:
+            self.redis.save_msg_on_Q(msg)
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def on_bbbb(self):
@@ -222,13 +218,19 @@ class CvAutoTradeProd02Gen02Core():
             # CASE 1-3 : 정상 케이스, 매수
             else:
                 self.do_buy()
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker} 매수에 성공하였습니다.")
+                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker}  {self.cycle_state}. pivot high 진입 모니터링을 시작합니다.")
                 return
     
-        # CASE 2: 매수 없이 상승세 감지      
-        elif self.bollinger_state_crr in ([6]) and\
-            self.bollinger_state_prev in ([5, 6]):
-            self.init_state(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였습니다. BBBB 모니터링을 중단합니다.")
+        # CASE 2: 매수 없이 상승세 감지, recover      
+        elif self.is_bbbt() and\
+            self.is_bbbb_recover():
+            self.init_state(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 상승세를 감지하였습니다. BBBB 모니터링을 중단합니다.")
+            return
+        
+        # CASE 3: 매수 없이 상승세 감지, time over      
+        elif self.is_bbbt() and\
+            self.is_time_over():
+            self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
             return
               
     """
@@ -238,12 +240,11 @@ class CvAutoTradeProd02Gen02Core():
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_after_bbbb_mornitoring_pivot_high(self, msg=None):
 
-        if msg:
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} {msg}")
-
         self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb")
         self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "mornitoring_pivot_high")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} pivot high 진입 모니터링을 시작합니다.")
+
+        if msg:
+            self.redis.save_msg_on_Q(f"{msg}")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def after_bbbb_mornitoring_pivot_high(self):
@@ -251,11 +252,11 @@ class CvAutoTradeProd02Gen02Core():
         try:
             if self.is_bbbb_out() == True:
                 if self.is_lift_up() == True:
-                    self.pre_after_bbbb_mornitoring_pivot_low(f"{self.slack_post_prefix} : {self.ticker} 상승형으로 피벗 전환하였습니다.")
+                    self.pre_after_bbbb_mornitoring_pivot_low(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state} 상승형으로 피벗 전환하였습니다. pivot low 진입 모니터링을 진행합니다")
                     return
             
             elif self.is_bbbb() == True:
-                self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state} {self.after_bbbb_state}. BBBB에 재진입 합니다.")
+                self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state} BBBB에 재진입 합니다. BBBB 모니터링을 시작합니다.")
                 return
         
         finally:
@@ -266,14 +267,13 @@ class CvAutoTradeProd02Gen02Core():
     mornitoring_pivot_low
     """ 
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def pre_after_bbbb_mornitoring_pivot_low(self, msg):
-
-        if msg : 
-            self.redis.save_msg_on_Q(msg) 
+    def pre_after_bbbb_mornitoring_pivot_low(self, msg=None):
 
         self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb")
         self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "mornitoring_pivot_low")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} pivot low 진입 모니터링을 진행합니다.")
+
+        if msg : 
+            self.redis.save_msg_on_Q(msg) 
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def after_bbbb_mornitoring_pivot_low(self):
@@ -281,17 +281,17 @@ class CvAutoTradeProd02Gen02Core():
         try:
             if self.is_bbbb() == True:
                 self.do_sell()
-                self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state} {self.after_bbbb_state}. BBBB에 재진입 하였습니다.")
+                self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
                 return
             
             elif self.is_lowest() == True:
                 self.do_sell(down_order_intense=False)
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker}  {self.cycle_state} {self.after_bbbb_state}. 최저가 밑으로 진입하였습니다.")
+                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker}  {self.cycle_state}. 최저가 밑으로 진입하였습니다. pivot high 진입 모니터링을 시작합니다.")
                 return
             
             else:
                 if self.is_lift_down() == True:
-                    self.pre_after_bbbb_mornitoring_stable(f"{self.slack_post_prefix} : {self.ticker} 하락형으로 피벗 전환하였습니다.")
+                    self.pre_after_bbbb_mornitoring_stable(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 하락형으로 피벗 전환하였습니다. stable 진입 모니터링을 진행합니다.")
                     return
         finally:
             self.update_lowest_price()
@@ -302,56 +302,49 @@ class CvAutoTradeProd02Gen02Core():
     """ 
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_after_bbbb_mornitoring_stable(self, msg=None):
-        if msg : 
-            self.redis.save_msg_on_Q(msg) 
 
         self.redis.hupd_date(self.pref_cycle_state, self.ticker, "after_bbbb")
         self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "mornitoring_stable")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} stable 진입 모니터링을 진행합니다.")
+        
+        if msg : 
+            self.redis.save_msg_on_Q(msg) 
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def after_bbbb_mornitoring_stable(self):
         
-        try:
-            if self.is_bbbb() == True:
-                self.do_sell()
-                self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state} {self.after_bbbb_state}. BBBB에 재진입 하였습니다.")
-                return
+        if self.is_bbbb() == True:
+            self.do_sell()
+            self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
+            return
             
-            elif self.is_lowest() == True:
-                self.do_sell(down_order_intense=False)
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker}  {self.cycle_state} {self.after_bbbb_state}. 최저가 밑으로 진입하였습니다.")
-                return
-                
-            else:
-                if self.is_lift_up() == True:
-                    if self.is_lowest() == True: 
-                        self.do_sell(down_order_intense=False)
-                        self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker} 하락형 산구도가 형성되었습니다.")
-                        return
+        else:
+            if self.is_lift_up(p=2) == True:
+                if self.is_lowest() == True: 
+                    self.do_sell(down_order_intense=False)
+                    self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 하락형 산구도가 형성되었습니다. pivot high 진입 모니터링을 시작합니다.")
+                    return
 
-                    else:
-                        # self.do_buy(up_order_intense=False) # TODO 조건부 매수, 너무 많이 오르거나, 하락할 기미가 보이는지 확인.
-                        self.pre_stable_bbbb(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다.")
-                        return
-        
-        finally:
-            self.update_lowest_price()
-                
+                else:
+                    self.pre_stable_bbbb(f"{self.slack_post_prefix} : {self.ticker} 상승형 산구도가 형성되었습니다. BBBB 안정화 단계 모니터링을 시작합니다.")
+                    
+                    # TODO 조건부 매수, 너무 많이 오르거나, 하락할 기미가 보이는지 확인
+                    if True:
+                        self.do_buy(up_order_intense=False)
+                        
+                    return
+    
     """
     stable_bbbb
     """      
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def pre_stable_bbbb(self, msg=None):
+        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "stable_bbbb")
+        self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "")
 
         if msg:
             self.redis.save_msg_on_Q(msg) 
         
-        self.redis.hupd_date(self.pref_cycle_state, self.ticker, "stable_bbbb")
-        self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "")
-        self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker} BBBB 안정화 단계 모니터링을 시작합니다.") 
-        
-        # TODO 지정가 초기화 하고 평단에 지정가 걸기.
+        # TODO 지정가 초기화 하고 평단에 매수액 절반만큼 매도 걸기
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def stable_bbbb(self):
@@ -359,22 +352,26 @@ class CvAutoTradeProd02Gen02Core():
         try:
             if self.is_bbbb() == True:
                 self.do_sell(down_order_intense=False)
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state} {self.after_bbbb_state}. BBBB에 재진입 하였습니다.")
+                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. BBBB에 재진입 하였습니다. pivot high 진입 모니터링을 시작합니다.")
                 return
             
             elif self.is_lowest() == True:
                 self.do_sell(down_order_intense=False)
-                self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state} {self.after_bbbb_state}. 최저가 밑으로 진입하였습니다.")
+                self.pre_on_bbbb(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 최저가 밑으로 진입하였습니다. BBBB 모니터링을 시작합니다.")
                 return
             
             elif self.is_bbbt() and\
                 self.is_time_over():
-                self.init_cycle(f"{self.slack_post_prefix} : {self.ticker}의 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
+                self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} {self.cycle_state}. 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
 
             # TODO : 상승 반전신호 캐치 
             elif True:
 
-                # 상승 반전 신호를 찾아 추매하고 사이클을 종료
+                # 상승 반전 신호를 찾아 상대적으로 강한 추매
+                #   현재가가 평단보다 높다면, 상승 가능성 판단하여 목표가 설정, 목표가에 지정가 매도, 매도량은 일단 100% 
+                #   현재가가 평단보다 낮다면, 상승 가능성 판단하여 목표가 설정, 폭표가와 평단에 지정가 매도, 매도량은 일단 50%, 50%
+                
+                # 사이클을 종료
                 """
                 TEST START
                 """
@@ -563,7 +560,7 @@ class CvAutoTradeProd02Gen02Core():
             self.trade_result_dao.insert(params)
 
             # 메세지 포스트
-            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
 
             # 매매 기록 및 강도 올림
             if up_order_intense == True:
@@ -720,17 +717,13 @@ class CvAutoTradeProd02Gen02Core():
                     return True
 
         return False
-    
-    def is_bbbt(self):
-        """
-        - 현재 볼린저 상태가 6 
-        - 이전 볼린저 상태가 5,6
-        """
-        if self.bollinger_state_crr and self.bollinger_state_prev:
-            if (self.bollinger_state_crr in ([6]) and\
-                self.bollinger_state_prev in ([5, 6])):
-                    return True
 
+    def is_bbbb_recover(self):
+        
+        if self.bbbb_price and self.current_price:
+            if (self.bbbb_price * 0.8) < self.current_price:
+                return True
+        
         return False
     
     def is_bbbb_out(self):
@@ -745,7 +738,19 @@ class CvAutoTradeProd02Gen02Core():
 
         return False
     
-    def is_lift_up(self):
+    def is_bbbt(self):
+        """
+        - 현재 볼린저 상태가 6 
+        - 이전 볼린저 상태가 5,6
+        """
+        if self.bollinger_state_crr and self.bollinger_state_prev:
+            if (self.bollinger_state_crr in ([6]) and\
+                self.bollinger_state_prev in ([5, 6])):
+                    return True
+
+        return False
+    
+    def is_lift_up(self, p=3):
         """
         - 2전 종가 < 1전 종가 < 현재가
         """
@@ -764,12 +769,12 @@ class CvAutoTradeProd02Gen02Core():
                 if c2 > c3: s += 1
                 if c3 > c4: s += 1
                     
-                if s >= 3:
+                if s >= p:
                     return True
                     
         return False
 
-    def is_lift_down(self):
+    def is_lift_down(self, p=3):
         """
         - 2전 종가 > 1전 종가 > 현재가
         """
@@ -788,18 +793,18 @@ class CvAutoTradeProd02Gen02Core():
                 if c2 < c3: s += 1
                 if c3 < c4: s += 1
                     
-                if s >= 3:
+                if s >= p:
                     return True
 
         return False
     
     def is_lowest(self):
 
-        if self.lowest_price >= self.current_price:
-            return True
+        if self.lowest_price and self.current_price:
+            if self.lowest_price >= self.current_price:
+                return True
         
-        else:
-            return False
+        return False
     
     def is_shooting(self):
         """
