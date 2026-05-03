@@ -26,6 +26,22 @@ def generate_now_date():
     now_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return now_date
 
+def generate_now_date_til_min():
+    """ 
+    def description : 오늘 날짜 연월일 시분초 산출
+
+    Parameters
+    ----------
+    없음 
+
+    Returns
+    -------
+    datetime
+        오늘 날짜 연월일 시분초
+    """
+    now_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    return now_date
+
 def generate_n_date_after(n):
     """ 
     def description : n일 후 연월일 시분초 산출
@@ -249,6 +265,24 @@ def cal_weekday_code(date_string):
     weekdays = ["0", "1", "2", "3", "4", "5", "6"]
     weekday = weekdays[date_object.weekday()]
     return weekday
+
+
+def floor_to_5m(dt):
+    return dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
+
+def get_5m_ticks_exact(last_dt_str):
+    fmt = "%Y-%m-%d %H:%M:%S"
+    
+    now_dt = datetime.strptime(generate_now_date(), fmt)
+    last_dt = datetime.strptime(last_dt_str, fmt)
+    
+    now_5m = floor_to_5m(now_dt)
+    last_5m = floor_to_5m(last_dt)
+    
+    delta = now_5m - last_5m
+    ticks = int(delta.total_seconds() / 300)  # 300초 = 5분
+    
+    return ticks
 
 def generate_weekday_kor():
     """ 

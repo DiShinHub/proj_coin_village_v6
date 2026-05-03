@@ -3,10 +3,11 @@ from background.middlewares.orderbook_handler import OrderbookHandler
 from background.constance.upbit_constance import UpbitConst
 
 from background.modules.exchange_upbit import ExChangeUpbit
+from background.modules.minio import MinioModule
 from background.modules.log import Log
 from background.modules.redis import r as redis_single
 
-from background.functions.common_function import generate_now_date
+from background.functions.common_function import *
 
 from background.dao.research_result_dao import ResearchResultDao
 from background.dao.trade_result_dao import TradeResultDao
@@ -88,6 +89,7 @@ class CvAutoTradeProd02Gen02Core():
         self.seq = seq
         self.redis = redis_single
         self.upbit = ExChangeUpbit()
+        self.minio = MinioModule()
         self.research_result_dao = ResearchResultDao()
         self.trade_result_dao = TradeResultDao()
 
@@ -125,7 +127,7 @@ class CvAutoTradeProd02Gen02Core():
         self.pref_order_hurdle = f"{self.pref_service}_{self.ticker}_order_hurdle"                  # 주문 허들 
         self.pref_order_last_dt = f"{self.pref_service}_{self.ticker}_order_last_dt"                # 마지막 주문 시간
         
-        self.pref_msg = f"{self.slack_post_prefix} [{self.ticker}] [{self.cycle_state}] : "
+        self.pref_msg = f"{self.slack_post_prefix} [{self.ticker}] "
         
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def run(self):
@@ -170,13 +172,13 @@ class CvAutoTradeProd02Gen02Core():
         
         # 하락세 감지, 모니터링 돌입
         if self.is_bbbb():
-            self.pre_on_bbbb(f"{self.pref_msg} 하단 무너짐이 감시 되었습니다. BBBB 모니터링을 시작합니다.")
+            self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} 하단 무너짐이 감시 되었습니다. BBBB 모니터링을 시작합니다.")
             return
             
         # CASE 2: 매수 없이 상승세 감지      
         elif self.is_bbbt() and\
             self.is_time_over():
-            self.init_cycle(f"{self.pref_msg} 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
+            self.init_cycle(f"{self.pref_msg} {self.cycle_state} 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
             return
         
     """
@@ -211,28 +213,28 @@ class CvAutoTradeProd02Gen02Core():
 
             # CASE 1-1 : 한화 없음
             if self.order_seed <= 5000:
-                self.init_cycle(f"{self.pref_msg} 매수하기 위한 한화가 없습니다. 초기화합니다.")
+                self.init_cycle(f"{self.pref_msg} {self.cycle_state} 매수하기 위한 한화가 없습니다. 초기화합니다.")
 
             # CASE 1-2 : 매수시도액보다 한화량 낮음. 초기화
             elif self.order_seed < self.order_amount:
-                self.init_cycle(f"{self.pref_msg} 매수하기 위한 한화가 부족합니다. 초기화합니다.")
+                self.init_cycle(f"{self.pref_msg} {self.cycle_state} 매수하기 위한 한화가 부족합니다. 초기화합니다.")
             
             # CASE 1-3 : 정상 케이스, 매수
             else:
-                self.do_buy()
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} pivot high 진입 모니터링을 시작합니다.")
+                self.do_buy_with_up_order_intense()
+                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} {self.cycle_state} pivot high 관측을 시작합니다.")
                 return
     
         # CASE 2: 매수 없이 상승세 감지, recover      
         elif self.is_bbbt() and\
             self.is_bbbb_recover():
-            self.init_state(f"{self.pref_msg} 상승세를 감지하였습니다. BBBB 모니터링을 중단합니다.")
+            self.init_state(f"{self.pref_msg} {self.cycle_state} 상승세를 감지하였습니다. BBBB 모니터링을 중단합니다.")
             return
         
         # CASE 3: 매수 없이 상승세 감지, time over      
         elif self.is_bbbt() and\
             self.is_time_over():
-            self.init_cycle(f"{self.pref_msg} 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
+            self.init_cycle(f"{self.pref_msg} {self.cycle_state} 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
             return
               
     """
@@ -254,11 +256,11 @@ class CvAutoTradeProd02Gen02Core():
         try:
             if self.is_bbbb_out() == True:
                 if self.is_lift_up() == True:
-                    self.pre_after_bbbb_mornitoring_pivot_low(f"{self.pref_msg} 상승형으로 피벗 전환하였습니다. pivot low 진입 모니터링을 진행합니다")
+                    self.pre_after_bbbb_mornitoring_pivot_low(f"{self.pref_msg} {self.cycle_state} 상승형으로 피벗 전환하였습니다. pivot low 관측을 진행합니다")
                     return
             
             elif self.is_bbbb() == True:
-                self.pre_on_bbbb(f"{self.pref_msg} BBBB에 재진입 합니다. BBBB 모니터링을 시작합니다.")
+                self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 합니다. BBBB 모니터링을 시작합니다.")
                 return
         
         finally:
@@ -283,17 +285,17 @@ class CvAutoTradeProd02Gen02Core():
         try:
             if self.is_bbbb() == True:
                 self.do_sell()
-                self.pre_on_bbbb(f"{self.pref_msg} BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
+                self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
                 return
             
             elif self.is_lowest() == True:
-                self.do_sell(down_order_intense=False)
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} 최저가 밑으로 진입하였습니다. pivot high 진입 모니터링을 시작합니다.")
+                self.do_sell()
+                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} {self.cycle_state} 최저가 밑으로 진입하였습니다. pivot high 관측을 시작합니다.")
                 return
             
             else:
                 if self.is_lift_down() == True:
-                    self.pre_after_bbbb_mornitoring_stable(f"{self.pref_msg} 하락형으로 피벗 전환하였습니다. stable 진입 모니터링을 진행합니다.")
+                    self.pre_after_bbbb_mornitoring_stable(f"{self.pref_msg} {self.cycle_state} 하락형으로 피벗 전환하였습니다. stable 관측을 진행합니다.")
                     return
         finally:
             self.update_lowest_price()
@@ -316,22 +318,29 @@ class CvAutoTradeProd02Gen02Core():
         
         if self.is_bbbb() == True:
             self.do_sell()
-            self.pre_on_bbbb(f"{self.pref_msg} BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
+            self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
             return
             
         else:
             if self.is_lift_up(p=2) == True:
                 if self.is_lowest() == True: 
-                    self.do_sell(down_order_intense=False)
-                    self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} 하락형 산구도가 형성되었습니다. pivot high 진입 모니터링을 시작합니다.")
+                    self.do_sell()
+                    self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} {self.cycle_state} 하락형 산구도가 형성되었습니다. pivot high 관측을 시작합니다.")
                     return
 
                 else:
-                    self.pre_stable_bbbb(f"{self.pref_msg} 상승형 산구도가 형성되었습니다. BBBB 안정화 단계 모니터링을 시작합니다.")
+                    self.pre_stable_bbbb(f"{self.pref_msg} {self.cycle_state} 상승형 산구도가 형성되었습니다. BBBB 안정화 단계 모니터링을 시작합니다.")
                     
-                    # TODO 조건부 매수, 너무 많이 오르거나, 하락할 기미가 보이는지 확인
-                    if True:
-                        self.do_buy(up_order_intense=False)
+                    ticks = get_5m_ticks_exact(self.order_last_dt)
+                    diff = self.current_price - self.lowest_price
+                    diff_rate = (self.current_price - self.lowest_price)/self.lowest_price*100 
+                    
+                    self.redis.save_msg_on_Q(f"TEST !! : ticks : {ticks}") 
+                    self.redis.save_msg_on_Q(f"TEST !! : diff : {diff}") 
+                    self.redis.save_msg_on_Q(f"TEST !! : diff_rate : {diff_rate}") 
+                    # 상황에 따른 추매
+                    # order_control = 
+                    # self.do_buy(order_control=0.5)
                         
                     return
     
@@ -351,20 +360,24 @@ class CvAutoTradeProd02Gen02Core():
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def stable_bbbb(self):
         
+        # 저장경로 설정
+        local_path_5 = self.minio.generate_local_path("csv")
+        local_path_15 = self.minio.generate_local_path("csv")
+        
         try:
             if self.is_bbbb() == True:
-                self.do_sell(down_order_intense=False)
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} BBBB에 재진입 하였습니다. pivot high 진입 모니터링을 시작합니다.")
+                self.do_sell()
+                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 하였습니다. pivot high 관측을 시작합니다.")
                 return
             
             elif self.is_lowest() == True:
-                self.do_sell(down_order_intense=False)
-                self.pre_on_bbbb(f"{self.pref_msg} 최저가 밑으로 진입하였습니다. BBBB 모니터링을 시작합니다.")
+                self.do_sell()
+                self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} 최저가 밑으로 진입하였습니다. BBBB 모니터링을 시작합니다.")
                 return
             
-            elif self.is_bbbt() and\
-                self.is_time_over():
-                self.init_cycle(f"{self.pref_msg} 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
+            # elif self.is_bbbt() and\
+            #     self.is_time_over():
+            #     self.init_cycle(f"{self.pref_msg} {self.cycle_state} 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
 
             # TODO : 상승 반전신호 캐치 
             elif True:
@@ -377,107 +390,39 @@ class CvAutoTradeProd02Gen02Core():
                 """
                 TEST START
                 """
-                self.upbit.set_rsi()
-                self.upbit.set_atr()
-                self.upbit.set_atr_ratio()
-                self.upbit.set_bollinger_width()
-                self.upbit.set_obv()
-                self.upbit.set_vwap()
-                self.upbit.set_volume_volatility()
-                self.upbit.set_volume_spike()
-                self.upbit.set_ichimoku_cloud_state()
-                self.df = self.upbit.get_df()
-                
-                self.rsi_list = [float(c) for c in self.df["rsi"].iloc[-10:].tolist()] 
-                self.atr_list = [float(c) for c in self.df["atr"].iloc[-10:].tolist()] 
-                self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
-                self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
-                self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
-                self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
-                self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
-                self.bull_cloud_list = [float(c) for c in self.df["bull_cloud"].iloc[-10:].tolist()]
-                self.bear_cloud_list = [float(c) for c in self.df["bear_cloud"].iloc[-10:].tolist()]
-                self.enter_cloud_list = [float(c) for c in self.df["enter_cloud"].iloc[-10:].tolist()]
-                self.enter_bull_cloud_list = [float(c) for c in self.df["enter_bull_cloud"].iloc[-10:].tolist()]
-                self.enter_bear_cloud_list = [float(c) for c in self.df["enter_bear_cloud"].iloc[-10:].tolist()]
-                self.break_up_cloud_list = [float(c) for c in self.df["break_up_cloud"].iloc[-10:].tolist()]
-                self.cloud_mid_list = [float(c) for c in self.df["cloud_mid"].iloc[-10:].tolist()]
-                self.entry_cloud_slope_list = [float(c) for c in self.df["entry_cloud_slope"].iloc[-10:].tolist()]
-                                             
-                self.log.info(f"=================== stable_bbbb 5 ========================")
-                self.log.info(f"self.rsi_list : {self.rsi_list}")
-                self.log.info(f"self.atr_list : {self.atr_list}")
-                self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
-                self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
-                self.log.info(f"self.obv_list : {self.obv_list}")
-                self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
-                self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
-                self.log.info(f"self.bull_cloud_list : {self.bull_cloud_list}")
-                self.log.info(f"self.bear_cloud_list : {self.bear_cloud_list}")
-                self.log.info(f"self.enter_cloud_list : {self.enter_cloud_list}")
-                self.log.info(f"self.enter_bull_cloud_list : {self.enter_bull_cloud_list}")
-                self.log.info(f"self.enter_bear_cloud_list : {self.enter_bear_cloud_list}")
-                self.log.info(f"self.break_up_cloud_list : {self.break_up_cloud_list}")
-                self.log.info(f"self.cloud_mid_list : {self.cloud_mid_list}")
-                self.log.info(f"self.entry_cloud_slope_list : {self.entry_cloud_slope_list}")
-                self.log.info(f"=================== stable_bbbb 5 ========================")  
-                                    
-                # df 15s
-                self.upbit.set_df(self.upbit.convert_5m_to_15m(self.df))
-                self.upbit.set_bollinger_partition()
-                self.upbit.set_rsi()
-                self.upbit.set_atr()
-                self.upbit.set_atr_ratio()
-                self.upbit.set_bollinger_width()
-                self.upbit.set_obv()
-                self.upbit.set_vwap()
-                self.upbit.set_volume_volatility()
-                self.upbit.set_volume_spike()
-                self.upbit.set_ichimoku_cloud_state()
-                self.df = self.upbit.get_df()
-                    
-                self.close_price_list_15 = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
-                self.bollinger_state_crr_15 = float(self.df["bollinger_partition"].iloc[-1])
-                self.bollinger_state_prev_15 = float(self.df["bollinger_partition"].iloc[-2])
+                # 저장경로 설정
+                minio_path_5 = f"eda/stable_bbbb/{self.ticker}/{str(generate_now_date_til_min()).replace(' ', '')}_5.csv"
+                minio_path_15 = f"eda/stable_bbbb/{self.ticker}/{str(generate_now_date_til_min()).replace(' ', '')}_15.csv"
 
-                self.rsi_list = [float(c) for c in self.df["rsi"].iloc[-10:].tolist()] 
-                self.atr_list = [float(c) for c in self.df["atr"].iloc[-10:].tolist()] 
-                self.atr_ratio_list = [float(c) for c in self.df["atr_ratio"].iloc[-10:].tolist()] 
-                self.bollinger_width_list = [float(c) for c in self.df["bollinger_width"].iloc[-10:].tolist()] 
-                self.obv_list = [float(c) for c in self.df["obv"].iloc[-10:].tolist()] 
-                self.volume_volatility_list = [float(c) for c in self.df["volume_volatility"].iloc[-10:].tolist()] 
-                self.volume_spike_list = [float(c) for c in self.df["volume_spike"].iloc[-10:].tolist()] 
-                self.bull_cloud_list = [float(c) for c in self.df["bull_cloud"].iloc[-10:].tolist()]
-                self.bear_cloud_list = [float(c) for c in self.df["bear_cloud"].iloc[-10:].tolist()]
-                self.enter_cloud_list = [float(c) for c in self.df["enter_cloud"].iloc[-10:].tolist()]
-                self.enter_bull_cloud_list = [float(c) for c in self.df["enter_bull_cloud"].iloc[-10:].tolist()]
-                self.enter_bear_cloud_list = [float(c) for c in self.df["enter_bear_cloud"].iloc[-10:].tolist()]
-                self.break_up_cloud_list = [float(c) for c in self.df["break_up_cloud"].iloc[-10:].tolist()]
-                self.cloud_mid_list = [float(c) for c in self.df["cloud_mid"].iloc[-10:].tolist()]
-                self.entry_cloud_slope_list = [float(c) for c in self.df["entry_cloud_slope"].iloc[-10:].tolist()]
-                                             
-                self.log.info(f"=================== stable_bbbb 15 ========================")
-                self.log.info(f"self.close_price_list_15 : {self.close_price_list_15}")
-                self.log.info(f"self.bollinger_state_crr_15 : {self.bollinger_state_crr_15}")
-                self.log.info(f"self.bollinger_state_prev_15 : {self.bollinger_state_prev_15}")
-                
-                self.log.info(f"self.rsi_list : {self.rsi_list}")
-                self.log.info(f"self.atr_list : {self.atr_list}")
-                self.log.info(f"self.atr_ratio_list : {self.atr_ratio_list}")
-                self.log.info(f"self.bollinger_width_list : {self.bollinger_width_list}")
-                self.log.info(f"self.obv_list : {self.obv_list}")
-                self.log.info(f"self.volume_volatility_list : {self.volume_volatility_list}")
-                self.log.info(f"self.volume_spike_list : {self.volume_spike_list}")
-                self.log.info(f"self.bull_cloud_list : {self.bull_cloud_list}")
-                self.log.info(f"self.bear_cloud_list : {self.bear_cloud_list}")
-                self.log.info(f"self.enter_cloud_list : {self.enter_cloud_list}")
-                self.log.info(f"self.enter_bull_cloud_list : {self.enter_bull_cloud_list}")
-                self.log.info(f"self.enter_bear_cloud_list : {self.enter_bear_cloud_list}")
-                self.log.info(f"self.break_up_cloud_list : {self.break_up_cloud_list}")
-                self.log.info(f"self.cloud_mid_list : {self.cloud_mid_list}")
-                self.log.info(f"self.entry_cloud_slope_list : {self.entry_cloud_slope_list}")
-                self.log.info(f"=================== stable_bbbb 15 ========================")  
-                
+                if self.minio.is_file_exist(minio_path_5) == False:
+                    self.upbit.set_all_features()
+                    df_5 = self.upbit.get_df()
+                    df_5["lowest_price"] = self.lowest_price
+                    df_5.to_csv(local_path_5, index=False)
+                    
+                    self.minio.upload_file(
+                        minio_file_path = minio_path_5, 
+                        local_file_path = local_path_5, 
+                        content_type = "text/csv", 
+                        metadata = {
+                            "Content-Disposition": "inline"
+                        })
+
+                if self.minio.is_file_exist(minio_path_15) == False:
+                    self.upbit.set_df(self.upbit.convert_5m_to_15m(df_5))
+                    self.upbit.set_all_features()
+                    df_15 = self.upbit.get_df()
+                    df_15["lowest_price"] = self.lowest_price
+                    df_15.to_csv(local_path_15, index=False)
+                    
+                    self.minio.upload_file(
+                        minio_file_path = minio_path_15, 
+                        local_file_path = local_path_15, 
+                        content_type = "text/csv", 
+                        metadata = {
+                            "Content-Disposition": "inline"
+                        })
+
                 # middle indi
                 data_list = self.research_result_dao.gets(
                     page_no=1,
@@ -503,7 +448,7 @@ class CvAutoTradeProd02Gen02Core():
                 self.log.info(f"self.upbit_regime_list : {self.upbit_regime_list}")
                 self.log.info(f"self.upbit_direction_list : {self.upbit_direction_list}")
                 self.log.info(f"=================== stable_bbbb middle indi ========================")
-                
+
                 # """
                 # TEST END
                 # """
@@ -512,6 +457,11 @@ class CvAutoTradeProd02Gen02Core():
                     
         finally:
             self.update_lowest_price()
+            
+            if os.path.exists(local_path_5):
+                os.remove(local_path_5)
+            if os.path.exists(local_path_15):
+                os.remove(local_path_15)
         
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def init_state(self, msg):
@@ -538,10 +488,40 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.save_msg_on_Q(msg)
     
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def do_buy(self, up_order_intense=True):
+    def do_buy(self, order_control=1):
         
         # 매매 진행
-        order_dt = str(generate_now_date())
+        self.order_last_dt = generate_now_date()
+        buy_result = self.upbit.buy_coin(self.order_amount*order_control)
+        if buy_result:
+            params = {
+                "exchange": "upbit",
+                "ticker": self.ticker,
+                "uuid": buy_result.get("uuid"),
+                "ord_side": buy_result.get("side"),
+                "ord_type": buy_result.get("ord_type"),
+                "price": buy_result.get("price"),
+                "reserved_fee": buy_result.get("reserved_fee"),
+                "remaining_fee": buy_result.get("remaining_fee"),
+                "paid_fee": buy_result.get("paid_fee"),
+                "state": buy_result.get("state"),
+                "locked": buy_result.get("locked"),
+                "executed_volume": buy_result.get("executed_volume"),
+                "runnable_service_seq": self.seq
+            }
+            self.trade_result_dao.insert(params)
+
+            # 메세지 포스트
+            self.redis.save_msg_on_Q(f"{self.pref_msg} {self.cycle_state} 매수 성공.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+
+        else:
+            self.init_state("매수에 실패햐였습니다.")
+    
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def do_buy_with_up_order_intense(self):
+        
+        # 매매 진행
+        self.order_last_dt = generate_now_date()
         buy_result = self.upbit.buy_coin(self.order_amount)
         if buy_result:
             params = {
@@ -562,23 +542,21 @@ class CvAutoTradeProd02Gen02Core():
             self.trade_result_dao.insert(params)
 
             # 메세지 포스트
-            self.redis.save_msg_on_Q(f"{self.pref_msg} 매수 성공.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
-
-            # 매매 기록 및 강도 올림
-            if up_order_intense == True:
-                if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
-                    self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
-                    self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
-                    self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
+            self.redis.save_msg_on_Q(f"{self.pref_msg} {self.cycle_state} 매수 성공.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+            
+            if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
+                self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
+                self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
+                self.redis.hupd_date(self.pref_order_last_dt, self.ticker, str(self.order_last_dt)) 
         
         else:
             self.init_state("매수에 실패햐였습니다.")
     
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def do_sell(self, down_order_intense=True):
+    def do_sell(self):
         
         # 매도 진행
-        order_dt = str(generate_now_date())
+        self.order_last_dt = str(generate_now_date())
         sell_result = self.upbit.sell_coin(self.order_amount/2)
         if sell_result:
             self.log.info(f"sell_result : {sell_result}")
@@ -602,18 +580,53 @@ class CvAutoTradeProd02Gen02Core():
             # # 메세지 포스트
             # self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
 
-            # 매매 기록 및 강도 내림
-            if down_order_intense == True:
-                if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
-                    self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount / self.order_percent_ir)) 
-                    self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle / self.order_hurdle_ir))  
-                    self.redis.hupd_date(self.pref_order_last_dt, self.ticker, order_dt) 
-                    
-                    # TODO : DEBUG
-                    self.set_state_bucket()
-                    self.log.info(f"self.order_amount : {self.order_amount}")
-                    self.log.info(f"self.order_hurdle : {self.order_hurdle}")
-                    self.log.info(f"self.order_last_dt : {self.order_last_dt}")
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def do_sell_with_down_order_intense(self):
+        
+        # 매도 진행
+        self.order_last_dt = generate_now_date()
+        sell_result = self.upbit.sell_coin(self.order_amount/2)
+        if sell_result:
+            self.log.info(f"sell_result : {sell_result}")
+            # params = {
+            #     "exchange": "upbit",
+            #     "ticker": self.ticker,
+            #     "uuid": buy_result.get("uuid"),
+            #     "ord_side": buy_result.get("side"),
+            #     "ord_type": buy_result.get("ord_type"),
+            #     "price": buy_result.get("price"),
+            #     "reserved_fee": buy_result.get("reserved_fee"),
+            #     "remaining_fee": buy_result.get("remaining_fee"),
+            #     "paid_fee": buy_result.get("paid_fee"),
+            #     "state": buy_result.get("state"),
+            #     "locked": buy_result.get("locked"),
+            #     "executed_volume": buy_result.get("executed_volume"),
+            #     "runnable_service_seq": self.seq
+            # }
+            # self.trade_result_dao.insert(params)
+
+            # # 메세지 포스트
+            # self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+
+            if self.redis.hget_data(self.pref_bbbb_price, self.ticker):   
+                
+                # TODO : DEBUG, DELETE 
+                self.set_state_bucket()
+                self.redis.save_msg_on_Q(f"TEST !!! : self.order_amount : {self.order_amount}") 
+                self.redis.save_msg_on_Q(f"TEST !!! : self.order_hurdle : {self.order_hurdle}") 
+                self.redis.save_msg_on_Q(f"TEST !!! : self.order_last_dt : {self.order_last_dt}") 
+                      
+                # TODO : KEEP HERE !! 
+                self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount / self.order_percent_ir)) 
+                self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle / self.order_hurdle_ir))  
+                self.redis.hupd_date(self.pref_order_last_dt, self.ticker, str(self.order_last_dt)) 
+                
+                # TODO : DEBUG, DELETE 
+                self.set_state_bucket()
+                self.redis.save_msg_on_Q(f"TEST !!! : self.order_amount : {self.order_amount}") 
+                self.redis.save_msg_on_Q(f"TEST !!! : self.order_hurdle : {self.order_hurdle}") 
+                self.redis.save_msg_on_Q(f"TEST !!! : self.order_last_dt : {self.order_last_dt}") 
+                
 
     """
     Helper
@@ -684,8 +697,8 @@ class CvAutoTradeProd02Gen02Core():
         else: self.current_price = float(self.df["close"].iloc[-1])
             
         self.close_price_list = [float(c) for c in self.df["close"].iloc[-10:].tolist()]
-        self.bollinger_state_crr = float(self.df["bollinger_partition"].iloc[-1])
-        self.bollinger_state_prev = float(self.df["bollinger_partition"].iloc[-2])
+        self.bollinger_state_crr = int(self.df["bollinger_partition"].iloc[-1])
+        self.bollinger_state_prev = int(self.df["bollinger_partition"].iloc[-2])
     
     def update_lowest_price(self):
         
