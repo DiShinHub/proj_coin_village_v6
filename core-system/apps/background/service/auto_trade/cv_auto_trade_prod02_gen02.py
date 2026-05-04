@@ -193,6 +193,8 @@ class CvAutoTradeProd02Gen02Core():
         
         if msg:
             self.redis.save_msg_on_Q(msg)
+        
+        self.save_cycle_state_changes("on_bbbb")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def on_bbbb(self):
@@ -249,6 +251,8 @@ class CvAutoTradeProd02Gen02Core():
 
         if msg:
             self.redis.save_msg_on_Q(f"{msg}")
+            
+        self.save_cycle_state_changes("after_bbbb", "mornitoring_pivot_high")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def after_bbbb_mornitoring_pivot_high(self):
@@ -278,6 +282,8 @@ class CvAutoTradeProd02Gen02Core():
 
         if msg : 
             self.redis.save_msg_on_Q(msg) 
+            
+        self.save_cycle_state_changes("after_bbbb", "mornitoring_pivot_low")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def after_bbbb_mornitoring_pivot_low(self):
@@ -312,6 +318,8 @@ class CvAutoTradeProd02Gen02Core():
         
         if msg : 
             self.redis.save_msg_on_Q(msg) 
+            
+        self.save_cycle_state_changes("after_bbbb", "mornitoring_stable")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def after_bbbb_mornitoring_stable(self):
@@ -356,112 +364,37 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.save_msg_on_Q(msg) 
         
         # TODO 지정가 초기화 하고 평단에 매수액 절반만큼 매도 걸기
+            
+        self.save_cycle_state_changes("stable_bbbb")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def stable_bbbb(self):
         
-        # 저장경로 설정
-        local_path_5 = self.minio.generate_local_path("csv")
-        local_path_15 = self.minio.generate_local_path("csv")
-        
         try:
-            if self.is_bbbb() == True:
-                self.do_sell()
-                self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 하였습니다. pivot high 관측을 시작합니다.")
+            if self.is_lowest() == True:
+                self.post_stable_bbbb(direction="down")
                 return
             
-            elif self.is_lowest() == True:
-                self.do_sell()
-                self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} 최저가 밑으로 진입하였습니다. BBBB 모니터링을 시작합니다.")
-                return
-            
-            # elif self.is_bbbt() and\
-            #     self.is_time_over():
-            #     self.init_cycle(f"{self.pref_msg} {self.cycle_state} 상승세를 감지하였으며 {self.order_reset_hours_if_stable}시간 동안 거래를 감지하지 못하였습니다. 매매롤 초기화 합니다.")
-
             # TODO : 상승 반전신호 캐치 
             elif True:
+                self.post_stable_bbbb(direction="up")
 
-                # 상승 반전 신호를 찾아 상대적으로 강한 추매
-                #   현재가가 평단보다 높다면, 상승 가능성 판단하여 목표가 설정, 목표가에 지정가 매도, 매도량은 일단 100% 
-                #   현재가가 평단보다 낮다면, 상승 가능성 판단하여 목표가 설정, 폭표가와 평단에 지정가 매도, 매도량은 일단 50%, 50%
-                
-                # 사이클을 종료
-                """
-                TEST START
-                """
-                # 저장경로 설정
-                minio_path_5 = f"eda/stable_bbbb/{self.ticker}/{str(generate_now_date_til_min()).replace(' ', '')}_5.csv"
-                minio_path_15 = f"eda/stable_bbbb/{self.ticker}/{str(generate_now_date_til_min()).replace(' ', '')}_15.csv"
-
-                if self.minio.is_file_exist(minio_path_5) == False:
-                    self.upbit.set_all_features()
-                    df_5 = self.upbit.get_df()
-                    df_5["lowest_price"] = self.lowest_price
-                    df_5.to_csv(local_path_5, index=False)
-                    
-                    self.minio.upload_file(
-                        minio_file_path = minio_path_5, 
-                        local_file_path = local_path_5, 
-                        content_type = "text/csv", 
-                        metadata = {
-                            "Content-Disposition": "inline"
-                        })
-
-                if self.minio.is_file_exist(minio_path_15) == False:
-                    self.upbit.set_df(self.upbit.convert_5m_to_15m(df_5))
-                    self.upbit.set_all_features()
-                    df_15 = self.upbit.get_df()
-                    df_15["lowest_price"] = self.lowest_price
-                    df_15.to_csv(local_path_15, index=False)
-                    
-                    self.minio.upload_file(
-                        minio_file_path = minio_path_15, 
-                        local_file_path = local_path_15, 
-                        content_type = "text/csv", 
-                        metadata = {
-                            "Content-Disposition": "inline"
-                        })
-
-                # middle indi
-                data_list = self.research_result_dao.gets(
-                    page_no=1,
-                    row_count=10,
-                    type="upbit-regime", 
-                    ticker=self.ticker
-                )
-                self.upbit_regime_list = data_list[0:10]
-                
-                data_list = self.research_result_dao.gets(
-                    page_no=1,
-                    row_count=10,
-                    type="upbit-direction", 
-                    ticker=self.ticker
-                )
-                self.upbit_direction_list = data_list[0:10]
-                
-                # 클라우드 진입전/진입의 상태를 나눠야할 수도 있겠다 
-                # 진입 시점의 시간 레디스에 기록
-                # 돌파 시점의 시간 레디스에 기록
-                # 두 시간의 기울기 = 강도 삼아 추매
-                self.log.info(f"=================== stable_bbbb middle indi ========================")
-                self.log.info(f"self.upbit_regime_list : {self.upbit_regime_list}")
-                self.log.info(f"self.upbit_direction_list : {self.upbit_direction_list}")
-                self.log.info(f"=================== stable_bbbb middle indi ========================")
-
-                # """
-                # TEST END
-                # """
-                # self.do_buy(up_order_intense=False)
-                # self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
-                    
         finally:
             self.update_lowest_price()
-            
-            if os.path.exists(local_path_5):
-                os.remove(local_path_5)
-            if os.path.exists(local_path_15):
-                os.remove(local_path_15)
+    
+    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
+    def post_stable_bbbb(self, direction="up"):
+        
+        if direction == "down":
+            self.do_sell()
+            self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} 최저가 밑으로 진입하였습니다. BBBB 모니터링을 시작합니다.")
+        
+        else:
+            self.do_buy(up_order_intense=False)
+            self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
+                
+        # TODO : run data collector with option
+        
         
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def init_state(self, msg):
@@ -472,6 +405,8 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hdel_data(self.pref_after_bbbb_state, self.ticker)
         self.redis.hdel_data(self.pref_lowest_price, self.ticker)
         self.redis.save_msg_on_Q(msg)
+        
+        self.save_cycle_state_changes("init_state")
     
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
     def init_cycle(self, msg):
@@ -486,7 +421,13 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hdel_data(self.pref_order_hurdle, self.ticker)
         self.redis.hdel_data(self.pref_order_last_dt, self.ticker)
         self.redis.save_msg_on_Q(msg)
+        
+        self.save_cycle_state_changes("init_cycle")
     
+    
+    """
+    transactions
+    """
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def do_buy(self, order_control=1):
         
@@ -836,7 +777,22 @@ class CvAutoTradeProd02Gen02Core():
                 return True
 
         return False
-
+    
+    def save_cycle_state_changes(self, cycle_step, after_bbbb_state=None):
+        
+        params = {}
+        params["runnable_service_seq"] = self.seq
+        params["type"] = "CvAutoTradeProd02Gen02Core-cycle_state"
+        params["exchange"] = "upbit"
+        params["ticker"] = self.ticker
+        params["tags"] = ["upbit", "cycle_state"]
+        params["result_markerable"] = f"{cycle_step}.{after_bbbb_state}"
+        params["result_json"] = None
+        params["result_txt"] = ""
+        params["reg_member_seq"] = 0
+        params["mod_member_seq"] = 0
+        self.research_result_dao.insert_with_limit(params, 100000)
+        
     
     
     # def is_lift_up(self):
