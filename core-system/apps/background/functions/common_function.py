@@ -273,8 +273,8 @@ def floor_to_5m(dt):
 def get_5m_ticks_exact(last_dt_str):
     fmt = "%Y-%m-%d %H:%M:%S"
     
-    now_dt = datetime.strptime(generate_now_date(), fmt)
-    last_dt = datetime.strptime(last_dt_str, fmt)
+    now_dt = datetime.datetime.strptime(generate_now_date(), fmt)
+    last_dt = datetime.datetime.strptime(last_dt_str, fmt)
     
     now_5m = floor_to_5m(now_dt)
     last_5m = floor_to_5m(last_dt)

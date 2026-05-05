@@ -16,6 +16,14 @@ class ResearchResultDao:
         if params.get("result_json"):
             result_json = f"""'{json.dumps(params["result_json"])}'::jsonb"""
 
+        reg_dt = 'now()'
+        if params.get("reg_dt"):
+            reg_dt = f"{params.get('reg_dt')}"
+
+        mod_dt = 'now()'
+        if params.get("mod_dt"):
+            mod_dt = f"{params.get('mod_dt')}"
+
         query = f"""
         INSERT INTO research_result
         (
@@ -42,9 +50,9 @@ class ResearchResultDao:
             '{params.get("result_markerable")}',
             {result_json},
             '{params.get("result_txt")}',
-            now(),
+            '{reg_dt}',
             {params.get("reg_member_seq")},
-            now(),
+            '{mod_dt}',
             {params.get("mod_member_seq")}
         )
         """

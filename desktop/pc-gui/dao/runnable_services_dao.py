@@ -31,7 +31,7 @@ class runnableServicesDao():
             WHERE
                 delete_yn = 'N'
             ORDER BY
-                seq ASC;
+                sort ASC;
         """
         return self.postgres.read_all(query) 
     

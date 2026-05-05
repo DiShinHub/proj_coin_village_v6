@@ -32,7 +32,27 @@ class ExChangeCalculator():
     
     def set_ohlcvs(self, interval, days, count, from_, to_):
 
-        max_call = int((days * 24 * 12) / count) + 2
+        if isinstance(to_, str):
+            to_ = datetime.datetime.strptime(to_, "%Y-%m-%d %H:%M:%S")
+
+        if isinstance(from_, str):
+            from_ = datetime.datetime.strptime(from_, "%Y-%m-%d %H:%M:%S")
+
+        interval_map = {
+            "minute1": 60,
+            "minute3": 20,
+            "minute5": 12,
+            "minute10": 6,
+            "minute15": 4,
+            "minute30": 2,
+            "minute60": 1,
+            "minute240": 1/4,
+            "day": 1/24,
+            "week": 1/(24*7),
+            "month": 1/(24*30),
+        }
+        per_hour = interval_map[interval]
+        max_call = int((days * 24 * per_hour) / count) + 2
 
         dfs = []
         for _ in range(max_call):

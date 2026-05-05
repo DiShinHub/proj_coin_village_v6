@@ -101,6 +101,7 @@ class CvAutoTradeProd02Gen02Core():
         self.order_intensity = order_intensity
         self.order_book = order_book
         self.order_max = order_max
+        self.order_book_date = order_book.get("order_book_date", None)
         
         # --- 모드 설정
         self.cycle_state = None     
@@ -115,6 +116,7 @@ class CvAutoTradeProd02Gen02Core():
         self.order_seed = 0                   # 주문 시드
         self.order_amount = 0                 # 주문 비중
         self.order_hurdle = 0                 # 주문 허들
+        self.order_last_price = None          # 마지막 주문 가격
         self.order_last_dt = None             # 마지막 주문 시간
 
         # --- prefixes
@@ -125,6 +127,7 @@ class CvAutoTradeProd02Gen02Core():
         self.pref_lowest_price = f"{self.pref_service}_{self.ticker}_lowest_price"                  # 특정 구역의 최저가
         self.pref_order_amount = f"{self.pref_service}_{self.ticker}_order_amount"                  # 주문량 
         self.pref_order_hurdle = f"{self.pref_service}_{self.ticker}_order_hurdle"                  # 주문 허들 
+        self.pref_order_last_price = f"{self.pref_service}_{self.ticker}_order_last_price"          # 마지막 주문 시간
         self.pref_order_last_dt = f"{self.pref_service}_{self.ticker}_order_last_dt"                # 마지막 주문 시간
         
         self.pref_msg = f"{self.slack_post_prefix} [{self.ticker}] "
@@ -168,7 +171,6 @@ class CvAutoTradeProd02Gen02Core():
     """
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
     def off_bbbb(self):
-        self.set_indicators()
         
         # 하락세 감지, 모니터링 돌입
         if self.is_bbbb():
@@ -192,7 +194,7 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hupd_date(self.pref_cycle_state, self.ticker, "on_bbbb")
         
         if msg:
-            self.redis.save_msg_on_Q(msg)
+            self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}")
         
         self.save_cycle_state_changes("on_bbbb")
 
@@ -250,7 +252,7 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "mornitoring_pivot_high")
 
         if msg:
-            self.redis.save_msg_on_Q(f"{msg}")
+            self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}")
             
         self.save_cycle_state_changes("after_bbbb", "mornitoring_pivot_high")
 
@@ -281,7 +283,7 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "mornitoring_pivot_low")
 
         if msg : 
-            self.redis.save_msg_on_Q(msg) 
+            self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}") 
             
         self.save_cycle_state_changes("after_bbbb", "mornitoring_pivot_low")
 
@@ -317,7 +319,7 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "mornitoring_stable")
         
         if msg : 
-            self.redis.save_msg_on_Q(msg) 
+            self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}") 
             
         self.save_cycle_state_changes("after_bbbb", "mornitoring_stable")
 
@@ -346,6 +348,7 @@ class CvAutoTradeProd02Gen02Core():
                     self.redis.save_msg_on_Q(f"TEST !! : ticks : {ticks}") 
                     self.redis.save_msg_on_Q(f"TEST !! : diff : {diff}") 
                     self.redis.save_msg_on_Q(f"TEST !! : diff_rate : {diff_rate}") 
+                    self.redis.save_msg_on_Q(f"TEST !! : self.order_book_date : {self.order_book_date}") 
                     # 상황에 따른 추매
                     # order_control = 
                     # self.do_buy(order_control=0.5)
@@ -361,7 +364,7 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hupd_date(self.pref_after_bbbb_state, self.ticker, "")
 
         if msg:
-            self.redis.save_msg_on_Q(msg) 
+            self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}") 
         
         # TODO 지정가 초기화 하고 평단에 매수액 절반만큼 매도 걸기
             
@@ -372,44 +375,36 @@ class CvAutoTradeProd02Gen02Core():
         
         try:
             if self.is_lowest() == True:
-                self.post_stable_bbbb(direction="down")
+                self.do_sell()
+                self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} 최저가 밑으로 진입하였습니다. BBBB 모니터링을 시작합니다.")
                 return
             
-            # TODO : 상승 반전신호 캐치 
-            elif True:
-                self.post_stable_bbbb(direction="up")
+            # TODO : 상승 반전신호 캐치 (임시 로직)
+            elif self.is_bbbt() and\
+                self.is_stable_bbbb_recover():
+
+                self.do_buy(up_order_intense=False)
+                self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
 
         finally:
             self.update_lowest_price()
-    
-    @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
-    def post_stable_bbbb(self, direction="up"):
-        
-        if direction == "down":
-            self.do_sell()
-            self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} 최저가 밑으로 진입하였습니다. BBBB 모니터링을 시작합니다.")
-        
-        else:
-            self.do_buy(up_order_intense=False)
-            self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
-                
-        # TODO : run data collector with option
-        
         
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
-    def init_state(self, msg):
+    def init_state(self, msg=None):
         
         # 상태만 초기화
         self.redis.hdel_data(self.pref_bbbb_price, self.ticker)
         self.redis.hdel_data(self.pref_cycle_state, self.ticker)
         self.redis.hdel_data(self.pref_after_bbbb_state, self.ticker)
         self.redis.hdel_data(self.pref_lowest_price, self.ticker)
-        self.redis.save_msg_on_Q(msg)
+
+        if msg:
+            self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}") 
         
         self.save_cycle_state_changes("init_state")
     
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1)
-    def init_cycle(self, msg):
+    def init_cycle(self, msg=None):
         
         # 사이클 전체 초기화
         self.redis.hdel_data(self.pref_cycle_state, self.ticker)
@@ -420,7 +415,9 @@ class CvAutoTradeProd02Gen02Core():
         self.redis.hdel_data(self.pref_order_amount, self.ticker)
         self.redis.hdel_data(self.pref_order_hurdle, self.ticker)
         self.redis.hdel_data(self.pref_order_last_dt, self.ticker)
-        self.redis.save_msg_on_Q(msg)
+
+        if msg:
+            self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}") 
         
         self.save_cycle_state_changes("init_cycle")
     
@@ -488,6 +485,7 @@ class CvAutoTradeProd02Gen02Core():
             if self.redis.hget_data(self.pref_bbbb_price, self.ticker):         
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount * self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle * self.order_hurdle_ir))  
+                self.redis.hupd_date(self.pref_order_last_price, self.ticker, str(self.current_price)) 
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, str(self.order_last_dt)) 
         
         else:
@@ -559,7 +557,8 @@ class CvAutoTradeProd02Gen02Core():
                       
                 # TODO : KEEP HERE !! 
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount / self.order_percent_ir)) 
-                self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle / self.order_hurdle_ir))  
+                self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle / self.order_hurdle_ir)) 
+                self.redis.hupd_date(self.pref_order_last_price, self.ticker, str(self.current_price)) 
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, str(self.order_last_dt)) 
                 
                 # TODO : DEBUG, DELETE 
@@ -623,13 +622,17 @@ class CvAutoTradeProd02Gen02Core():
         if self.order_amount: self.order_amount = float(self.order_amount)
         else: self.order_amount = 0
         
+        self.order_last_price = self.redis.hget_data(self.pref_order_last_price, self.ticker) # 마지막 주문 시간
+        if self.order_last_price: self.order_last_price = float(self.order_last_price)
+        else: self.order_last_price = 0
+        
         self.order_last_dt = self.redis.hget_data(self.pref_order_last_dt, self.ticker) # 마지막 주문 시간
         if self.order_last_dt: self.order_last_dt = datetime.datetime.strptime(self.order_last_dt, "%Y-%m-%d %H:%M:%S")
         else: self.order_last_dt = datetime.datetime.now()
          
     # Indicators, API & Calucator
     def set_indicators(self):
-        self.upbit.set_ohlcv(interval="minute5", count=200)
+        self.upbit.set_ohlcv(interval="minute5", date=self.order_book_date, count=200)
         self.upbit.set_bollinger_partition()
         self.df = self.upbit.get_df()
         
@@ -705,6 +708,15 @@ class CvAutoTradeProd02Gen02Core():
                     return True
 
         return False
+    
+    def is_stable_bbbb_recover(self):
+        
+        if self.order_last_price and self.current_price:
+            if (self.order_last_price*1.25) < self.current_price:
+                return True
+        
+        return False
+        
     
     def is_lift_up(self, p=3):
         """
@@ -790,7 +802,10 @@ class CvAutoTradeProd02Gen02Core():
         params["result_json"] = None
         params["result_txt"] = ""
         params["reg_member_seq"] = 0
+        params["reg_dt"] = self.order_book_date
         params["mod_member_seq"] = 0
+        params["mod_dt"] = self.order_book_date
+
         self.research_result_dao.insert_with_limit(params, 100000)
         
     

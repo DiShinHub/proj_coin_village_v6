@@ -6,17 +6,18 @@ from background.modules.exchange_upbit import ExChangeUpbit
 
 from background.constance.upbit_constance import UpbitConst
 
+import pandas as pd
 import os
 import time
 import json
 
-class CvRedisCleanerGen01(ServiceHandler):
+class CvRequestGeneratorGen01(ServiceHandler):
     """
-    Service Code : CvRedisCleaner
+    Service Code : CvRequestGenerator
     Generation : 01 
     
     Desc : 
-    - 레디스 플러시
+    - 
     """
 
     def __init__(
@@ -36,15 +37,18 @@ class CvRedisCleanerGen01(ServiceHandler):
         self.upbit = ExChangeUpbit()
 
         self.ticker = self.service_options["ticker"]
-        self.target_term = self.service_options["target_term"]
+        self.term_from = self.service_options["term_from"]
+
+        self.term_to = self.service_options["term_to"]
         self.interval_ = self.service_options["interval"]
 
     def main(self):
 
         try:
             self.upbit.set_ticker(self.ticker)
-            df = self.upbit.set_ohlcvs(interval="minute1", count=200, days=90, from_=self.target_term["from"], to_=self.target_term["to"])
-            self.replay_df_to_queue(df)
+            df = self.upbit.set_ohlcvs(interval=self.interval_, count=200, days=90, from_=self.term_from, to_=self.term_to)
+
+            self.replay_df_to_queue(df, 0.5)
 
         except Exception as e:
             self.log.info(f"class : {self.__class__.__name__}, error : {str(e)}")
@@ -55,13 +59,15 @@ class CvRedisCleanerGen01(ServiceHandler):
     def replay_df_to_queue(self, df, speed=1.0):
         
         for _, row in df.iterrows():
-            
-            ts = int(row["datetime"].timestamp() * 1000)
-            
+            dt = row["datetime"]
+            dt = dt.tz_localize("Asia/Seoul")
+            ts = int(dt.timestamp())*1000
+
             event = {
                 "code": self.ticker,
                 "trade_price": row["close"],
-                "timestamp": ts
+                "timestamp": ts,
+                "order_book_date": str(row["datetime"])
             }
             key = f"{UpbitConst.ORDERBOOK_QUEUE_KEY}_{self.ticker}_{ts}"
             self.push_to_queue(key, json.dumps(event))
@@ -72,5 +78,5 @@ class CvRedisCleanerGen01(ServiceHandler):
         self.redis.set_data(
             key=key,
             val=message, 
-            expire=self.service_options.get("ttl_orderbook")
+            expire=60
         )
