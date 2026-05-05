@@ -380,8 +380,7 @@ class CvAutoTradeProd02Gen02Core():
                 return
             
             # TODO : 상승 반전신호 캐치 (임시 로직)
-            elif self.is_bbbt() and\
-                self.is_stable_bbbb_recover():
+            if self.is_stable_bbbb_recover():
 
                 self.do_buy(up_order_intense=False)
                 self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
@@ -448,6 +447,9 @@ class CvAutoTradeProd02Gen02Core():
                 "runnable_service_seq": self.seq
             }
             self.trade_result_dao.insert(params)
+            
+            self.redis.hupd_date(self.pref_order_last_price, self.ticker, str(self.current_price)) 
+            self.redis.hupd_date(self.pref_order_last_dt, self.ticker, str(self.order_last_dt)) 
 
             # 메세지 포스트
             self.redis.save_msg_on_Q(f"{self.pref_msg} {self.cycle_state} 매수 성공.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
