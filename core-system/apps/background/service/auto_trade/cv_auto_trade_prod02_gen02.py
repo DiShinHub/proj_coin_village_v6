@@ -164,7 +164,8 @@ class CvAutoTradeProd02Gen02Core():
                 self.off_bbbb()
         
         except Exception as e:
-            self.log.info(f"{str(e)}")
+            if "blocked by" not in str(e):
+                self.log.info(f"{str(e)}")
     
     """
     off_bbbb
@@ -266,6 +267,7 @@ class CvAutoTradeProd02Gen02Core():
                     return
             
             elif self.is_bbbb() == True:
+                self.do_sell_with_down_order_intense()
                 self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 합니다. BBBB 모니터링을 시작합니다.")
                 return
         
@@ -292,12 +294,11 @@ class CvAutoTradeProd02Gen02Core():
 
         try:
             if self.is_bbbb() == True:
-                self.do_sell()
+                self.do_sell_with_down_order_intense()
                 self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
                 return
             
             elif self.is_lowest() == True:
-                self.do_sell()
                 self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} {self.cycle_state} 최저가 밑으로 진입하였습니다. pivot high 관측을 시작합니다.")
                 return
             
@@ -327,31 +328,30 @@ class CvAutoTradeProd02Gen02Core():
     def after_bbbb_mornitoring_stable(self):
         
         if self.is_bbbb() == True:
-            self.do_sell()
+            self.do_sell_with_down_order_intense()
             self.pre_on_bbbb(f"{self.pref_msg} {self.cycle_state} BBBB에 재진입 하였습니다. BBBB 모니터링을 시작합니다.")
             return
             
         else:
             if self.is_lift_up(p=2) == True:
                 if self.is_lowest() == True: 
-                    self.do_sell()
                     self.pre_after_bbbb_mornitoring_pivot_high(f"{self.pref_msg} {self.cycle_state} 하락형 산구도가 형성되었습니다. pivot high 관측을 시작합니다.")
                     return
 
                 else:
                     self.pre_stable_bbbb(f"{self.pref_msg} {self.cycle_state} 상승형 산구도가 형성되었습니다. BBBB 안정화 단계 모니터링을 시작합니다.")
                     
-                    ticks = get_5m_ticks_exact(self.order_last_dt)
-                    diff = self.current_price - self.lowest_price
-                    diff_rate = (self.current_price - self.lowest_price)/self.lowest_price*100 
-                    
-                    self.redis.save_msg_on_Q(f"TEST !! : ticks : {ticks}") 
-                    self.redis.save_msg_on_Q(f"TEST !! : diff : {diff}") 
-                    self.redis.save_msg_on_Q(f"TEST !! : diff_rate : {diff_rate}") 
-                    self.redis.save_msg_on_Q(f"TEST !! : self.order_book_date : {self.order_book_date}") 
-                    # 상황에 따른 추매
-                    # order_control = 
-                    # self.do_buy(order_control=0.5)
+                    if self.order_book_date:
+                        now_dt = str(self.order_book_date)
+
+                    else:
+                        now_dt = str(generate_now_date())
+
+                    ticks = get_ticks(self.order_last_dt, now_dt, "minutes5")
+                    diff_rate = ((self.current_price - self.lowest_price)/self.lowest_price)*90000 
+
+                    self.rubber_band_power = diff_rate/ticks
+                    # 여기서의 rubber_band_power를 stable_bbbb에 넘겨주면 되겠다 
                         
                     return
     
@@ -367,7 +367,6 @@ class CvAutoTradeProd02Gen02Core():
             self.redis.save_msg_on_Q(f"{msg} {self.order_book_date}") 
         
         # TODO 지정가 초기화 하고 평단에 매수액 절반만큼 매도 걸기
-            
         self.save_cycle_state_changes("stable_bbbb")
 
     @block_when_lock(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY)
@@ -381,8 +380,7 @@ class CvAutoTradeProd02Gen02Core():
             
             # TODO : 상승 반전신호 캐치 (임시 로직)
             if self.is_stable_bbbb_recover():
-
-                self.do_buy(up_order_intense=False)
+                self.do_buy()
                 self.init_cycle(f"{self.slack_post_prefix} : {self.ticker} 상승 반전신호를 캐치하였습니다. 이후 상황을 주시하세요. 사이클을 마무리합니다.")
 
         finally:
@@ -420,7 +418,6 @@ class CvAutoTradeProd02Gen02Core():
         
         self.save_cycle_state_changes("init_cycle")
     
-    
     """
     transactions
     """
@@ -428,7 +425,12 @@ class CvAutoTradeProd02Gen02Core():
     def do_buy(self, order_control=1):
         
         # 매매 진행
-        self.order_last_dt = generate_now_date()
+        if self.order_book_date:
+            self.order_last_dt = str(self.order_book_date)
+
+        else:
+            self.order_last_dt = str(generate_now_date())
+
         buy_result = self.upbit.buy_coin(self.order_amount*order_control)
         if buy_result:
             params = {
@@ -461,7 +463,12 @@ class CvAutoTradeProd02Gen02Core():
     def do_buy_with_up_order_intense(self):
         
         # 매매 진행
-        self.order_last_dt = generate_now_date()
+        if self.order_book_date:
+            self.order_last_dt = str(self.order_book_date)
+
+        else:
+            self.order_last_dt = str(generate_now_date())
+
         buy_result = self.upbit.buy_coin(self.order_amount)
         if buy_result:
             params = {
@@ -497,79 +504,75 @@ class CvAutoTradeProd02Gen02Core():
     def do_sell(self):
         
         # 매도 진행
-        self.order_last_dt = str(generate_now_date())
+        if self.order_book_date:
+            self.order_last_dt = str(self.order_book_date)
+
+        else:
+            self.order_last_dt = str(generate_now_date())
+
         sell_result = self.upbit.sell_coin(self.order_amount/2)
         if sell_result:
-            self.log.info(f"sell_result : {sell_result}")
-            # params = {
-            #     "exchange": "upbit",
-            #     "ticker": self.ticker,
-            #     "uuid": buy_result.get("uuid"),
-            #     "ord_side": buy_result.get("side"),
-            #     "ord_type": buy_result.get("ord_type"),
-            #     "price": buy_result.get("price"),
-            #     "reserved_fee": buy_result.get("reserved_fee"),
-            #     "remaining_fee": buy_result.get("remaining_fee"),
-            #     "paid_fee": buy_result.get("paid_fee"),
-            #     "state": buy_result.get("state"),
-            #     "locked": buy_result.get("locked"),
-            #     "executed_volume": buy_result.get("executed_volume"),
-            #     "runnable_service_seq": self.seq
-            # }
-            # self.trade_result_dao.insert(params)
+            params = {
+                "exchange": "upbit",
+                "ticker": self.ticker,
+                "uuid": sell_result.get("uuid"),
+                "ord_side": sell_result.get("side"),
+                "ord_type": sell_result.get("ord_type"),
+                "price": sell_result.get("price"),
+                "reserved_fee": sell_result.get("reserved_fee"),
+                "remaining_fee": sell_result.get("remaining_fee"),
+                "paid_fee": sell_result.get("paid_fee"),
+                "state": sell_result.get("state"),
+                "locked": sell_result.get("locked"),
+                "executed_volume": sell_result.get("executed_volume"),
+                "runnable_service_seq": self.seq
+            }
+            self.trade_result_dao.insert(params)
 
-            # # 메세지 포스트
-            # self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+            self.redis.hupd_date(self.pref_order_last_price, self.ticker, str(self.current_price)) 
+            self.redis.hupd_date(self.pref_order_last_dt, self.ticker, str(self.order_last_dt)) 
+
+            # 메세지 포스트
+            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매도를 성공하였습니다.\n 주문가 : {round(float(sell_result['price']), 2)}, 수수료 : {round(float(sell_result['reserved_fee']))}\n\n")
 
     @lock_transaction(lock_key=UpbitConst.TRANSACTION_BLOCK_KEY, hold=1) 
     def do_sell_with_down_order_intense(self):
         
         # 매도 진행
-        self.order_last_dt = generate_now_date()
+        if self.order_book_date:
+            self.order_last_dt = str(self.order_book_date)
+
+        else:
+            self.order_last_dt = str(generate_now_date())
+
         sell_result = self.upbit.sell_coin(self.order_amount/2)
         if sell_result:
-            self.log.info(f"sell_result : {sell_result}")
-            # params = {
-            #     "exchange": "upbit",
-            #     "ticker": self.ticker,
-            #     "uuid": buy_result.get("uuid"),
-            #     "ord_side": buy_result.get("side"),
-            #     "ord_type": buy_result.get("ord_type"),
-            #     "price": buy_result.get("price"),
-            #     "reserved_fee": buy_result.get("reserved_fee"),
-            #     "remaining_fee": buy_result.get("remaining_fee"),
-            #     "paid_fee": buy_result.get("paid_fee"),
-            #     "state": buy_result.get("state"),
-            #     "locked": buy_result.get("locked"),
-            #     "executed_volume": buy_result.get("executed_volume"),
-            #     "runnable_service_seq": self.seq
-            # }
-            # self.trade_result_dao.insert(params)
+            params = {
+                "exchange": "upbit",
+                "ticker": self.ticker,
+                "uuid": sell_result.get("uuid"),
+                "ord_side": sell_result.get("side"),
+                "ord_type": sell_result.get("ord_type"),
+                "price": sell_result.get("price"),
+                "reserved_fee": sell_result.get("reserved_fee"),
+                "remaining_fee": sell_result.get("remaining_fee"),
+                "paid_fee": sell_result.get("paid_fee"),
+                "state": sell_result.get("state"),
+                "locked": sell_result.get("locked"),
+                "executed_volume": sell_result.get("executed_volume"),
+                "runnable_service_seq": self.seq
+            }
+            self.trade_result_dao.insert(params)
 
-            # # 메세지 포스트
-            # self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매수를 성공하였습니다.\n 주문가 : {round(float(buy_result['price']), 2)}, 수수료 : {round(float(buy_result['reserved_fee']))}\n\n")
+            # 메세지 포스트
+            self.redis.save_msg_on_Q(f"{self.slack_post_prefix} : {self.ticker}의 매도를 성공하였습니다.\n 주문가 : {round(float(sell_result['price']), 2)}, 수수료 : {round(float(sell_result['reserved_fee']))}\n\n")
 
             if self.redis.hget_data(self.pref_bbbb_price, self.ticker):   
-                
-                # TODO : DEBUG, DELETE 
-                self.set_state_bucket()
-                self.redis.save_msg_on_Q(f"TEST !!! : self.order_amount : {self.order_amount}") 
-                self.redis.save_msg_on_Q(f"TEST !!! : self.order_hurdle : {self.order_hurdle}") 
-                self.redis.save_msg_on_Q(f"TEST !!! : self.order_last_dt : {self.order_last_dt}") 
-                      
-                # TODO : KEEP HERE !! 
                 self.redis.hupd_date(self.pref_order_amount, self.ticker, (self.order_amount / self.order_percent_ir)) 
                 self.redis.hupd_date(self.pref_order_hurdle, self.ticker, (self.order_hurdle / self.order_hurdle_ir)) 
                 self.redis.hupd_date(self.pref_order_last_price, self.ticker, str(self.current_price)) 
                 self.redis.hupd_date(self.pref_order_last_dt, self.ticker, str(self.order_last_dt)) 
                 
-                # TODO : DEBUG, DELETE 
-                self.set_state_bucket()
-                self.redis.save_msg_on_Q(f"TEST !!! : self.order_amount : {self.order_amount}") 
-                self.redis.save_msg_on_Q(f"TEST !!! : self.order_hurdle : {self.order_hurdle}") 
-                self.redis.save_msg_on_Q(f"TEST !!! : self.order_last_dt : {self.order_last_dt}") 
-                
-
     """
     Helper
     """
@@ -714,7 +717,10 @@ class CvAutoTradeProd02Gen02Core():
     def is_stable_bbbb_recover(self):
         
         if self.order_last_price and self.current_price:
-            if (self.order_last_price*1.25) < self.current_price:
+            if (self.order_last_price * 1.125) < self.current_price:
+                return True
+            
+            if (self.bbbb_price * 0.8) < self.current_price:
                 return True
         
         return False
@@ -735,8 +741,17 @@ class CvAutoTradeProd02Gen02Core():
                 
                 s = 0
                 if c0 > c1: s += 1
+                elif c0 > c2: s += 1
+                elif c0 > c3: s += 1
+                elif c0 > c4: s += 1
+
                 if c1 > c2: s += 1
+                elif c1 > c3: s += 1
+                elif c1 > c4: s += 1
+
                 if c2 > c3: s += 1
+                elif c2 > c4: s += 1
+
                 if c3 > c4: s += 1
                     
                 if s >= p:
@@ -759,9 +774,18 @@ class CvAutoTradeProd02Gen02Core():
                 
                 s = 0
                 if c0 < c1: s += 1
-                if c1 < c2: s += 1
-                if c2 < c3: s += 1
-                if c3 < c4: s += 1
+
+                if c0 < c2: s += 1
+                elif c1 < c2: s += 1
+
+                if c0 < c3: s += 1
+                elif c1 < c3: s += 1
+                elif c2 < c3: s += 1
+
+                if c0 < c4: s += 1
+                elif c1 < c4: s += 1
+                elif c2 < c4: s += 1
+                elif c3 < c4: s += 1
                     
                 if s >= p:
                     return True

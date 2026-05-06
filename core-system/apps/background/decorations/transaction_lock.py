@@ -27,7 +27,6 @@ def lock_transaction(lock_key, ttl=10, hold=0):
                 raise Exception(f"blocked by overlab transaction, block type")
             
             try:
-                
                 # lock transaction
                 res = redis_client.set(lock_key, "1", ttl, nx=True) # nx: key가 없을 때만 set을 할 수 있다
                 
@@ -39,7 +38,7 @@ def lock_transaction(lock_key, ttl=10, hold=0):
                     raise Exception(f"blocked by overlab transaction, block type")
                 
             except Exception as e:
-                system_module_log.info(f"method : {str(func.__name__)}, error : {str(e)}")
+                #system_module_log.info(f"method : {str(func.__name__)}, error : {str(e)}")
                 raise e 
             
             finally:
@@ -74,8 +73,9 @@ def wait_when_lock(lock_key):
                         time.sleep(1)
                      
             except Exception as e:
-                system_module_log.info(f"method : {str(func.__name__)}, error : {str(e)}")
-                raise e
+                if "blocked by" not in str(e):
+                    #system_module_log.info(f"method : {str(func.__name__)}, error : {str(e)}")
+                    raise e
                 
         return wrapper
     return decorator
@@ -95,8 +95,9 @@ def block_when_lock(lock_key):
                 return func(*args, **kwargs)
                      
             except Exception as e:
-                system_module_log.info(f"method : {str(func.__name__)}, error : {str(e)}")
-                raise e
+                if "blocked by" not in str(e):
+                    #system_module_log.info(f"method : {str(func.__name__)}, error : {str(e)}")
+                    raise e
                 
         return wrapper
     return decorator

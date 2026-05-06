@@ -270,17 +270,34 @@ def cal_weekday_code(date_string):
 def floor_to_5m(dt):
     return dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
 
-def get_5m_ticks_exact(last_dt_str):
-    fmt = "%Y-%m-%d %H:%M:%S"
+def get_ticks(last_dt, now_dt, interval="minutes1"):
     
-    now_dt = datetime.datetime.strptime(generate_now_date(), fmt)
-    last_dt = datetime.datetime.strptime(last_dt_str, fmt)
+    sec = 60
+    if interval == "minutes1":
+        sec = 60
+    if interval == "minutes5":
+        sec = 60*5
+    elif interval == "minute15":
+        sec = 60*15
+    elif interval == "minute30":
+        sec = 60*30
+    elif interval == "hour1":
+        sec = 60*60
+    elif interval == "hour4":
+        sec = 4*60*60
+    elif interval == "hour12":
+        sec = 12*60*60
+    elif interval == "day":
+        sec = 24*60*60
+
+    if isinstance(last_dt, str):
+        last_dt = datetime.datetime.strptime(last_dt, "%Y-%m-%d %H:%M:%S")
+
+    if isinstance(now_dt, str):
+        now_dt = datetime.datetime.strptime(now_dt, "%Y-%m-%d %H:%M:%S")
     
-    now_5m = floor_to_5m(now_dt)
-    last_5m = floor_to_5m(last_dt)
-    
-    delta = now_5m - last_5m
-    ticks = int(delta.total_seconds() / 300)  # 300초 = 5분
+    delta = now_dt - last_dt
+    ticks = int(delta.total_seconds() / sec) + 1
     
     return ticks
 
